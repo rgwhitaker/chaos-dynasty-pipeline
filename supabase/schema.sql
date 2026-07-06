@@ -50,6 +50,24 @@ create table if not exists public.team_ready_states (
 create index if not exists team_ready_states_team_id_idx
   on public.team_ready_states (team_id);
 
+-- Weekly newspapers -----------------------------------------------------------
+-- One row per generated "Weekly Newspaper". `content` holds the structured
+-- newspaper (headline, summary, highlights, power poll) as JSON so the shape can
+-- evolve without migrations. A dynasty/week can have multiple rows (e.g. a
+-- manual regeneration via `/newspaper`); the most recent `generated_at` wins.
+create table if not exists public.newspapers (
+  id           text primary key,
+  dynasty_id   text not null default 'default',
+  week         integer not null,
+  headline     text not null,
+  content      jsonb not null,
+  model        text,
+  generated_at timestamptz not null default now()
+);
+
+create index if not exists newspapers_dynasty_week_idx
+  on public.newspapers (dynasty_id, week, generated_at desc);
+
 -- Row level security ----------------------------------------------------------
 -- The Discord bot talks to Supabase with the service role key, which bypasses
 -- RLS. Enabling RLS with no public policies keeps these tables private from the
@@ -57,3 +75,4 @@ create index if not exists team_ready_states_team_id_idx
 alter table public.teams enable row level security;
 alter table public.week_states enable row level security;
 alter table public.team_ready_states enable row level security;
+alter table public.newspapers enable row level security;

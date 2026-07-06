@@ -3,6 +3,7 @@ import type { BotCommand } from "@/bot/commands/types";
 import { advanceCommand } from "@/bot/commands/advance";
 import { deleteTeamCommand } from "@/bot/commands/deleteTeam";
 import { editTeamCommand } from "@/bot/commands/editTeam";
+import { newspaperCommand } from "@/bot/commands/newspaper";
 import { pingCommand } from "@/bot/commands/ping";
 import { readyCommand } from "@/bot/commands/ready";
 import { registerCommand } from "@/bot/commands/register";
@@ -18,6 +19,7 @@ export const commands: BotCommand[] = [
   readyCommand,
   statusCommand,
   advanceCommand,
+  newspaperCommand,
   registerCommand,
   setReadyCommand,
   setEmojiCommand,

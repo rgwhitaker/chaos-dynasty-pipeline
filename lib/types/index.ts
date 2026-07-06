@@ -119,3 +119,41 @@ export interface GeneratedNewspaper {
   sourceGameIds: Id[];
   generatedAt: string;
 }
+
+/** A single entry in the "Chaos Power Poll" section of a weekly newspaper. */
+export interface PowerPollEntry {
+  /** 1-based ranking position. */
+  rank: number;
+  /** Team name (or abbreviation) being ranked. */
+  team: string;
+  /** Optional one-line justification for the ranking. */
+  note?: string;
+}
+
+/**
+ * Structured content of a generated weekly newspaper. Produced by the Grok
+ * client and rendered into Discord embeds. Stored as JSON in the `newspapers`
+ * table so the shape can evolve without migrations.
+ */
+export interface NewspaperContent {
+  /** Catchy headline for the week. */
+  headline: string;
+  /** Short overall summary of the week. */
+  summary: string;
+  /** Notable highlights or storylines from the week. */
+  highlights: string[];
+  /** Optional "Chaos Power Poll" ranking (present when data allows). */
+  powerPoll?: PowerPollEntry[];
+}
+
+/** A persisted weekly newspaper for a dynasty. */
+export interface Newspaper {
+  id: Id;
+  dynastyId: Id;
+  /** Week the newspaper covers (the week that just ended). */
+  weekNumber: number;
+  content: NewspaperContent;
+  /** Grok model used to generate the content. */
+  model: string;
+  generatedAt: string;
+}
