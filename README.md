@@ -23,7 +23,7 @@ It combines:
 - `bot/start.ts` – bot startup entry point (config validation, login, graceful shutdown)
 - `bot/client.ts` – Discord client factory, command registration, gateway lifecycle logging
 - `bot/config.ts` / `bot/logger.ts` – env configuration/validation and structured logging
-- `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/register`, `/ping`)
+- `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/register`, `/set-ready`, `/ping`)
 - `bot/store/` – ready-to-advance state store (Supabase-backed, with an in-memory fallback)
 - `bot/ui/` – Discord message/embed + button builders
 - `lib/types/` – Core domain types
@@ -80,6 +80,7 @@ The core weekly coordination flow lives in `bot/`:
   - `/status` – show the current week and which teams are ready / not ready.
   - `/advance` – advance to the next week when enough teams are ready. Restricted to commissioners (configured role or Manage Server permission).
   - `/register <user> <team>` – link a Discord user to a team, creating the team if it doesn't exist yet. Restricted to commissioners (same permission rule as `/advance`). The `team` option has autocomplete that searches existing teams by name or abbreviation.
+  - `/set-ready <user> <ready>` – set another user's team ready status for the current week, even if they never marked ready themselves. Restricted to commissioners (same permission rule as `/advance`). Returns a clear error if the target user isn't linked to a team, and shows an updated ready summary.
   - `/ping` – simple liveness check.
 - `bot/store/readyStore.ts` – the `ReadyStore` interface plus the in-memory implementation (`InMemoryReadyStore`) used as a local-dev fallback. `getReadyStore()` selects the Supabase-backed store when credentials are present.
 - `bot/store/supabaseReadyStore.ts` – `SupabaseReadyStore`, the persistent implementation of `ReadyStore` backed by Supabase (`teams`, `week_states`, `team_ready_states`).
