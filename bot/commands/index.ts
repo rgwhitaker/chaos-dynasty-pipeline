@@ -4,6 +4,7 @@ import { advanceCommand } from "@/bot/commands/advance";
 import { pingCommand } from "@/bot/commands/ping";
 import { readyCommand } from "@/bot/commands/ready";
 import { registerCommand } from "@/bot/commands/register";
+import { setReadyCommand } from "@/bot/commands/setReady";
 import { statusCommand } from "@/bot/commands/status";
 import { getReadyStore } from "@/bot/store/readyStore";
 import { buildReadyStatusMessage, READY_BUTTON_IDS } from "@/bot/ui/readyMessage";
@@ -14,6 +15,7 @@ export const commands: BotCommand[] = [
   statusCommand,
   advanceCommand,
   registerCommand,
+  setReadyCommand,
   pingCommand,
 ];
 
