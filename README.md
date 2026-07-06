@@ -23,12 +23,13 @@ It combines:
 - `bot/start.ts` – bot startup entry point (config validation, login, graceful shutdown)
 - `bot/client.ts` – Discord client factory, command registration, gateway lifecycle logging
 - `bot/config.ts` / `bot/logger.ts` – env configuration/validation and structured logging
-- `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/register`, `/set-ready`, `/set-emoji`, `/edit-team`, `/unlink`, `/delete-team`, `/ping`)
-- `bot/store/` – ready-to-advance state store (Supabase-backed, with an in-memory fallback)
+- `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/newspaper`, `/register`, `/set-ready`, `/set-emoji`, `/edit-team`, `/unlink`, `/delete-team`, `/ping`)
+- `bot/store/` – ready-to-advance state store + weekly newspaper store (Supabase-backed, with an in-memory fallback)
+- `bot/newspaper.ts` – Weekly Newspaper orchestration (generate → store → post)
 - `bot/ui/` – Discord message/embed + button builders
 - `lib/types/` – Core domain types
 - `lib/supabase/` – Supabase SSR/browser clients + service-role client (`service.ts`)
-- `lib/grok/` – Grok API client scaffolding
+- `lib/grok/` – Grok API client scaffolding + Weekly Newspaper generation (`newspaper.ts`)
 - `components/ui/` – shadcn-style reusable UI components
 - `supabase/` – SQL schema (`schema.sql`) and seed data (`seed.sql`)
 
@@ -78,7 +79,8 @@ The core weekly coordination flow lives in `bot/`:
 - `bot/commands/` – slash commands built with `SlashCommandBuilder`:
   - `/ready [ready:true|false]` – mark **your** team ready (or not ready) for the current week. Only users linked to a team may use it.
   - `/status` – show the current week and which teams are ready / not ready.
-  - `/advance` – advance to the next week when enough teams are ready. Restricted to commissioners (configured role or Manage Server permission).
+  - `/advance` – advance to the next week when enough teams are ready. Restricted to commissioners (configured role or Manage Server permission). After a successful advance, the bot automatically generates and posts a **Weekly Newspaper** for the week that just ended (see below).
+  - `/newspaper [week]` – manually (re)generate and post the Weekly Newspaper. Restricted to commissioners. Defaults to the most recently completed week; pass `week` to target the current or any specific week.
   - `/register <user> <team>` – link a Discord user to a team, creating the team if it doesn't exist yet. Restricted to commissioners (same permission rule as `/advance`). The `team` option has autocomplete that searches existing teams by name or abbreviation.
   - `/set-ready <user> <ready>` – set another user's team ready status for the current week, even if they never marked ready themselves. Restricted to commissioners (same permission rule as `/advance`). Returns a clear error if the target user isn't linked to a team, and shows an updated ready summary.
   - `/set-emoji <team> [emoji]` – set (or clear) the emoji shown next to a team's name in `/status` and other messages. Restricted to commissioners. The `team` option has autocomplete; leave `emoji` empty to remove a team's emoji.
@@ -103,6 +105,10 @@ The core weekly coordination flow lives in `bot/`:
 | `LEAGUE_DYNASTY_ID` | Dynasty id the bot coordinates | `default` |
 | `DISCORD_COMMISSIONER_ROLE_ID` | Role allowed to run `/advance` | Manage Server permission |
 | `DISCORD_TEAM_LINKS` | JSON linking Discord users to seeded teams (**in-memory fallback only**) | none |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (web app) | none |
+| `XAI_API_KEY` | xAI Grok API key (required to generate newspapers) | none |
+| `NEWSPAPER_CHANNEL_ID` | Discord channel id the Weekly Newspaper is posted to | none |
+| `NEWSPAPER_IMAGE_URL` | Optional image shown as the newspaper embed thumbnail | none |
 
 When `NEXT_PUBLIC_SUPABASE_URL` **and** `SUPABASE_SERVICE_ROLE_KEY` are set,
 `getReadyStore()` uses the persistent `SupabaseReadyStore`. Otherwise it falls
@@ -125,7 +131,8 @@ with no external dependencies.
 
 2. Create the tables. In the Supabase dashboard open **SQL Editor**, paste the
    contents of [`supabase/schema.sql`](supabase/schema.sql), and run it. This
-   creates `teams`, `week_states`, and `team_ready_states` (with RLS enabled).
+   creates `teams`, `week_states`, `team_ready_states`, and `newspapers` (with
+   RLS enabled).
 
 3. Seed initial teams by running [`supabase/seed.sql`](supabase/seed.sql) the
    same way. It inserts four starter teams and opens Week 1. To link a Discord
@@ -222,7 +229,64 @@ created before this feature are upgraded automatically when you re-run
 [`supabase/schema.sql`](supabase/schema.sql) (it adds the column with
 `alter table ... add column if not exists`).
 
-### Managing teams and links
+### Weekly Newspaper
+
+After every successful `/advance`, the bot generates a **Weekly Newspaper** for
+the week that just ended and posts it to a dedicated Discord channel. It uses the
+xAI **Grok** API to write an entertaining, chaos-flavored recap.
+
+Each newspaper includes:
+
+- a catchy **headline** for the week,
+- a short **overall summary**,
+- **highlights / storylines** from the week, and
+- a **Chaos Power Poll** ranking the teams (when team data is available).
+
+The result is rendered as a rich Discord **embed** (title, summary description,
+highlight and power-poll fields, footer with the model used) and is also stored
+in Supabase for history.
+
+### How it works
+
+- `lib/grok/newspaper.ts` – builds the prompt from the current league/team data,
+  calls Grok, and parses the JSON response into structured `NewspaperContent`
+  (headline, summary, highlights, power poll). Parsing is defensive: it strips
+  stray Markdown code fences, drops malformed power-poll rows, and throws a clear
+  error if the headline/summary are missing.
+- `bot/store/newspaperStore.ts` – persists newspapers to the `newspapers` table
+  (`SupabaseNewspaperStore`) with an in-memory fallback (`InMemoryNewspaperStore`)
+  for local development, selected by `getNewspaperStore()`.
+- `bot/ui/newspaperMessage.ts` – builds the Discord embed.
+- `bot/newspaper.ts` – orchestration: generate → store → post to the channel in
+  `NEWSPAPER_CHANNEL_ID`. Posting is best-effort — a missing or invalid channel is
+  logged as a warning and never breaks the `/advance` flow.
+
+### Configuration
+
+- Set `XAI_API_KEY` so the bot can call Grok (`XAI_MODEL_TEXT` selects the model,
+  default `grok-3-latest`).
+- Set `NEWSPAPER_CHANNEL_ID` to the channel where newspapers should be posted.
+  When unset, the newspaper is still generated and stored, but not posted.
+- Optionally set `NEWSPAPER_IMAGE_URL` (e.g. your dynasty logo) to show a
+  thumbnail on the embed.
+
+Run [`supabase/schema.sql`](supabase/schema.sql) to create the `newspapers`
+table (it is idempotent, so re-running it on an existing database just adds the
+new table).
+
+### Manual regeneration
+
+Commissioners can regenerate and re-post at any time with `/newspaper`:
+
+```text
+/newspaper                 # most recently completed week
+/newspaper week:5          # a specific week
+```
+
+Each run stores a new row (the latest `generated_at` for a week wins), so it is
+safe to regenerate if you tweak prompts or want a fresh take.
+
+## Managing teams and links
 
 Commissioners have a few more tools for keeping the roster tidy. All are
 restricted to the commissioner role (`DISCORD_COMMISSIONER_ROLE_ID`) or the
@@ -243,4 +307,4 @@ selection where relevant.
 1. ✅ Interactive ready-status command flow (in-memory)
 2. ✅ Move ready/week state persistence to Supabase
 3. Screenshot ingestion + OCR extraction pipeline
-4. AI dynasty newspaper generation and publishing
+4. ✅ AI dynasty newspaper generation and publishing (`/advance` + `/newspaper`)

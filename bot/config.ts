@@ -54,6 +54,15 @@ export function getBotToken(): string | undefined {
 }
 
 /**
+ * The Discord channel id where the Weekly Newspaper is posted. When unset, the
+ * newspaper is generated and stored but not posted to a channel (a warning is
+ * logged). Set `NEWSPAPER_CHANNEL_ID` to enable posting.
+ */
+export function getNewspaperChannelId(): string | undefined {
+  return process.env.NEWSPAPER_CHANNEL_ID?.trim() || undefined;
+}
+
+/**
  * Whether the bot should attempt to start/log in. Defaults to disabled so the
  * Next.js app can run (build, preview, tests) without Discord credentials.
  */
