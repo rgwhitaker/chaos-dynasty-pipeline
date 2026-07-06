@@ -64,7 +64,8 @@ function mapTeam(row: TeamRow, status: ReadyStatus, updatedAt: string): Team {
 
 /**
  * Escape characters that are special inside a PostgREST `ilike` pattern so
- * user-supplied text is matched literally. `%` and `_` are LIKE wildcards, and
+ * user-supplied text is matched literally. The backslash is escaped first (it is
+ * the escape character itself), `%` and `_` are LIKE wildcards, and
  * `,`/`(`/`)` would otherwise break out of the `or(...)` filter expression.
  */
 function escapeIlike(value: string): string {

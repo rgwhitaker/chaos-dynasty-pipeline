@@ -33,7 +33,7 @@ export function slugifyTeamName(name: string): string {
  * provide one:
  *  - multi-word names use the leading initials (up to 4), e.g.
  *    "Oregon State Beavers" -> "OSB";
- *  - single-word names use the first 3–4 letters, e.g. "Liberty" -> "LIB".
+ *  - single-word names use the first four letters, e.g. "Liberty" -> "LIBE".
  *
  * Returns an uppercase string, or an empty string when the name has no letters
  * or digits to work with.
