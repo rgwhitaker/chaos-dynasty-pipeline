@@ -27,28 +27,38 @@ export const advanceCommand: BotCommand = {
       return;
     }
 
-    const store = getReadyStore();
-    const result = await store.advanceWeek();
+    // Defer the public reply so advancing (which touches the store) stays within
+    // Discord's response window.
+    await interaction.deferReply();
 
-    if (!result.advanced) {
-      const { summary } = result;
-      const message = await buildReadyStatusMessage(summary);
-      await interaction.reply({
+    try {
+      const store = getReadyStore();
+      const result = await store.advanceWeek();
+
+      if (!result.advanced) {
+        const { summary } = result;
+        const message = await buildReadyStatusMessage(summary);
+        await interaction.editReply({
+          content:
+            `Not enough teams are ready to advance Week ${summary.weekNumber} ` +
+            `(${summary.readyCount}/${summary.requiredCount}).`,
+          ...message,
+        });
+        return;
+      }
+
+      const message = await buildReadyStatusMessage(result.summary);
+      await interaction.editReply({
         content:
-          `Not enough teams are ready to advance Week ${summary.weekNumber} ` +
-          `(${summary.readyCount}/${summary.requiredCount}).`,
+          `Advanced from Week ${result.previousWeek} to **Week ${result.currentWeek}**! ` +
+          "Ready statuses have been reset.",
         ...message,
-        ephemeral: true,
       });
-      return;
+    } catch (error) {
+      console.error("[advance] Failed to advance the week", error);
+      await interaction.editReply({
+        content: "Sorry, I couldn't advance the week right now. Please try again shortly.",
+      });
     }
-
-    const message = await buildReadyStatusMessage(result.summary);
-    await interaction.reply({
-      content:
-        `Advanced from Week ${result.previousWeek} to **Week ${result.currentWeek}**! ` +
-        "Ready statuses have been reset.",
-      ...message,
-    });
   },
 };

@@ -25,7 +25,18 @@ export const readyCommand: BotCommand = {
     const store = getReadyStore();
 
     // Permission check: only users linked to a team can mark ready.
-    const team = await store.getTeamByDiscordUserId(interaction.user.id);
+    let team;
+    try {
+      team = await store.getTeamByDiscordUserId(interaction.user.id);
+    } catch (error) {
+      console.error("[ready] Failed to look up linked team", error);
+      await interaction.reply({
+        content: "Sorry, I couldn't reach the league data right now. Please try again shortly.",
+        ephemeral: true,
+      });
+      return;
+    }
+
     if (!team) {
       await interaction.reply({
         content:
@@ -36,16 +47,26 @@ export const readyCommand: BotCommand = {
       return;
     }
 
-    const wantsReady = interaction.options.getBoolean("ready") ?? true;
-    await store.setReadyStatus(team.id, wantsReady ? "READY" : "NOT_READY", interaction.user.id);
+    // Defer the public reply so we have time to persist the change to the store.
+    await interaction.deferReply();
 
-    const summary = await store.getReadySummary();
-    const message = await buildReadyStatusMessage(summary);
+    try {
+      const wantsReady = interaction.options.getBoolean("ready") ?? true;
+      await store.setReadyStatus(team.id, wantsReady ? "READY" : "NOT_READY", interaction.user.id);
 
-    const verb = wantsReady ? "ready" : "not ready";
-    await interaction.reply({
-      content: `**${team.name}** is now marked **${verb}** for Week ${summary.weekNumber}.`,
-      ...message,
-    });
+      const summary = await store.getReadySummary();
+      const message = await buildReadyStatusMessage(summary);
+
+      const verb = wantsReady ? "ready" : "not ready";
+      await interaction.editReply({
+        content: `**${team.name}** is now marked **${verb}** for Week ${summary.weekNumber}.`,
+        ...message,
+      });
+    } catch (error) {
+      console.error("[ready] Failed to update ready status", error);
+      await interaction.editReply({
+        content: "Sorry, I couldn't update your ready status right now. Please try again shortly.",
+      });
+    }
   },
 };

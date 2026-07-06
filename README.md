@@ -21,12 +21,13 @@ It combines:
 - `app/` – App Router UI and pages
 - `bot/` – Discord bot client and interaction handlers
 - `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/ping`)
-- `bot/store/` – ready-to-advance state store (in-memory today, Supabase-ready)
+- `bot/store/` – ready-to-advance state store (Supabase-backed, with an in-memory fallback)
 - `bot/ui/` – Discord message/embed + button builders
 - `lib/types/` – Core domain types
-- `lib/supabase/` – Supabase SSR/browser clients
+- `lib/supabase/` – Supabase SSR/browser clients + service-role client (`service.ts`)
 - `lib/grok/` – Grok API client scaffolding
 - `components/ui/` – shadcn-style reusable UI components
+- `supabase/` – SQL schema (`schema.sql`) and seed data (`seed.sql`)
 
 ## Environment setup
 
@@ -64,7 +65,9 @@ The core weekly coordination flow lives in `bot/`:
   - `/status` – show the current week and which teams are ready / not ready.
   - `/advance` – advance to the next week when enough teams are ready. Restricted to commissioners (configured role or Manage Server permission).
   - `/ping` – simple liveness check.
-- `bot/store/readyStore.ts` – an in-memory store (`ReadyStore` interface + `InMemoryReadyStore`) for week state and per-team readiness. It is intentionally async and shaped to mirror the eventual Supabase tables so it can be swapped in later without touching command code.
+- `bot/store/readyStore.ts` – the `ReadyStore` interface plus the in-memory implementation (`InMemoryReadyStore`) used as a local-dev fallback. `getReadyStore()` selects the Supabase-backed store when credentials are present.
+- `bot/store/supabaseReadyStore.ts` – `SupabaseReadyStore`, the persistent implementation of `ReadyStore` backed by Supabase (`teams`, `week_states`, `team_ready_states`).
+- `lib/supabase/service.ts` – service-role Supabase client used by the bot (server-side only).
 - `bot/ui/readyMessage.ts` – builds the status embed and the **Mark Ready / Mark Not Ready / Refresh** buttons.
 - `bot/config.ts` – reads league configuration from the environment.
 
@@ -72,13 +75,49 @@ The core weekly coordination flow lives in `bot/`:
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL (enables persistence) | none |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key used by the bot (server-side only) | none |
 | `LEAGUE_START_WEEK` | Week the league starts on | `1` |
 | `LEAGUE_ADVANCE_THRESHOLD` | Ready teams required to advance, or `ALL` | `ALL` |
-| `LEAGUE_DYNASTY_ID` | Dynasty id used while state is in memory | `default` |
+| `LEAGUE_DYNASTY_ID` | Dynasty id the bot coordinates | `default` |
 | `DISCORD_COMMISSIONER_ROLE_ID` | Role allowed to run `/advance` | Manage Server permission |
-| `DISCORD_TEAM_LINKS` | JSON linking Discord users to seeded teams | none |
+| `DISCORD_TEAM_LINKS` | JSON linking Discord users to seeded teams (**in-memory fallback only**) | none |
 
-The store seeds four demo teams: `team-thunder`, `team-reign`, `team-blitz`, `team-surge`.
+When `NEXT_PUBLIC_SUPABASE_URL` **and** `SUPABASE_SERVICE_ROLE_KEY` are set,
+`getReadyStore()` uses the persistent `SupabaseReadyStore`. Otherwise it falls
+back to the in-memory store (state resets on restart) so local development works
+with no external dependencies.
+
+### Supabase setup
+
+1. Create a Supabase project and copy its URL, anon key, and **service role**
+   key into `.env.local`:
+
+   ```bash
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-anon-key
+   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+   ```
+
+   > The service role key bypasses row level security. Keep it server-side only —
+   > never expose it to the browser or commit it.
+
+2. Create the tables. In the Supabase dashboard open **SQL Editor**, paste the
+   contents of [`supabase/schema.sql`](supabase/schema.sql), and run it. This
+   creates `teams`, `week_states`, and `team_ready_states` (with RLS enabled).
+
+3. Seed initial teams by running [`supabase/seed.sql`](supabase/seed.sql) the
+   same way. It inserts four starter teams and opens Week 1. To link a Discord
+   account to a team, set that team's `discord_user_id` (enable Developer Mode →
+   right-click a user → **Copy User ID**), e.g.:
+
+   ```sql
+   update public.teams set discord_user_id = 'YOUR_USER_ID' where id = 'team-thunder';
+   ```
+
+Both files are idempotent, so they are safe to re-run.
+
+The seed provides four demo teams: `team-thunder`, `team-reign`, `team-blitz`, `team-surge`.
 
 ### Test the ready system locally
 
@@ -90,11 +129,13 @@ The store seeds four demo teams: `team-thunder`, `team-reign`, `team-blitz`, `te
    ```
 
    Set at least `DISCORD_BOT_ENABLED=true`, `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID`, and `DISCORD_GUILD_ID`.
-3. Link your Discord account to a seeded team so you can mark ready. Find your user id (enable Developer Mode → right-click your name → Copy User ID) and set:
+3. Link your Discord account to a team so you can mark ready:
+   - **With Supabase:** set the team's `discord_user_id` (see step 3 of *Supabase setup* above).
+   - **Without Supabase (in-memory):** find your user id (enable Developer Mode → right-click your name → Copy User ID) and set:
 
-   ```bash
-   DISCORD_TEAM_LINKS=[{"discordUserId":"YOUR_USER_ID","teamId":"team-thunder"}]
-   ```
+     ```bash
+     DISCORD_TEAM_LINKS=[{"discordUserId":"YOUR_USER_ID","teamId":"team-thunder"}]
+     ```
 
    Optionally lower the bar for a solo test with `LEAGUE_ADVANCE_THRESHOLD=1`.
 4. Start the app (this also starts the bot and registers the guild commands):
@@ -108,11 +149,12 @@ The store seeds four demo teams: `team-thunder`, `team-reign`, `team-blitz`, `te
    - `/ready` – mark your team ready; the status message updates. Or click the **Mark Ready** button.
    - `/advance` – as a commissioner, advance the week once the threshold is met. Ready statuses reset for the new week.
 
-> State is in memory only, so it resets when the dev server restarts. Supabase persistence is the next step.
+> With Supabase configured, state persists across restarts. Without it, the
+> in-memory fallback resets when the dev server restarts.
 
 ## Near-term roadmap
 
 1. ✅ Interactive ready-status command flow (in-memory)
-2. Move ready/week state persistence to Supabase
+2. ✅ Move ready/week state persistence to Supabase
 3. Screenshot ingestion + OCR extraction pipeline
 4. AI dynasty newspaper generation and publishing

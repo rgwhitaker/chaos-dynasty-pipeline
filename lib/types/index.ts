@@ -6,6 +6,8 @@ export interface Team {
   id: Id;
   dynastyId: Id;
   name: string;
+  /** Short display abbreviation (e.g. "CHA"). */
+  abbreviation?: string;
   mascot?: string;
   conference?: string;
   userId?: Id;
