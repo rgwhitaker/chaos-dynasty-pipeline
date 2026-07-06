@@ -8,6 +8,8 @@ export interface Team {
   name: string;
   /** Short display abbreviation (e.g. "CHA"). */
   abbreviation?: string;
+  /** Optional emoji shown next to the team name in Discord messages. */
+  emoji?: string;
   mascot?: string;
   conference?: string;
   userId?: Id;

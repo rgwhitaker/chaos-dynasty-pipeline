@@ -17,9 +17,13 @@ create table if not exists public.teams (
   dynasty_id      text not null default 'default',
   name            text not null,
   abbreviation    text,
+  emoji           text,
   discord_user_id text unique,
   created_at      timestamptz not null default now()
 );
+
+-- Backfill the emoji column for databases created before it was introduced.
+alter table public.teams add column if not exists emoji text;
 
 create index if not exists teams_dynasty_id_idx on public.teams (dynasty_id);
 

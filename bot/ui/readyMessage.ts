@@ -29,8 +29,9 @@ export function formatReadyLines(summary: ReadySummary): string {
   return summary.entries
     .map((entry) => {
       const emoji = entry.status === "READY" ? READY_EMOJI : NOT_READY_EMOJI;
+      const teamEmoji = entry.team.emoji ? `${entry.team.emoji} ` : "";
       const owner = entry.team.userId ? ` — <@${entry.team.userId}>` : " — _unlinked_";
-      return `${emoji} **${entry.team.name}**${owner}`;
+      return `${emoji} ${teamEmoji}**${entry.team.name}**${owner}`;
     })
     .join("\n");
 }

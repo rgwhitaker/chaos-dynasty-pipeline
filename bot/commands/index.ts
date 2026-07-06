@@ -1,11 +1,15 @@
 import type { ButtonInteraction } from "discord.js";
 import type { BotCommand } from "@/bot/commands/types";
 import { advanceCommand } from "@/bot/commands/advance";
+import { deleteTeamCommand } from "@/bot/commands/deleteTeam";
+import { editTeamCommand } from "@/bot/commands/editTeam";
 import { pingCommand } from "@/bot/commands/ping";
 import { readyCommand } from "@/bot/commands/ready";
 import { registerCommand } from "@/bot/commands/register";
+import { setEmojiCommand } from "@/bot/commands/setEmoji";
 import { setReadyCommand } from "@/bot/commands/setReady";
 import { statusCommand } from "@/bot/commands/status";
+import { unlinkCommand } from "@/bot/commands/unlink";
 import { getReadyStore } from "@/bot/store/readyStore";
 import { buildReadyStatusMessage, READY_BUTTON_IDS } from "@/bot/ui/readyMessage";
 
@@ -16,6 +20,10 @@ export const commands: BotCommand[] = [
   advanceCommand,
   registerCommand,
   setReadyCommand,
+  setEmojiCommand,
+  editTeamCommand,
+  unlinkCommand,
+  deleteTeamCommand,
   pingCommand,
 ];
 

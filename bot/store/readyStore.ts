@@ -3,6 +3,7 @@ import { SupabaseReadyStore } from "@/bot/store/supabaseReadyStore";
 import {
   generateAbbreviation,
   normalizeAbbreviation,
+  normalizeEmoji,
   normalizeTeamName,
   slugifyTeamName,
 } from "@/bot/store/teamNaming";
@@ -27,6 +28,18 @@ export interface CreateTeamInput {
   name: string;
   /** Optional short abbreviation; generated from the name when omitted. */
   abbreviation?: string;
+  /** Optional emoji shown next to the team name in Discord messages. */
+  emoji?: string;
+}
+
+/**
+ * Fields that may be changed on an existing team. Only provided keys are
+ * updated. `emoji` accepts `null` to explicitly clear a previously-set emoji.
+ */
+export interface UpdateTeamInput {
+  name?: string;
+  abbreviation?: string;
+  emoji?: string | null;
 }
 
 /**
@@ -65,11 +78,27 @@ export interface ReadyStore {
   createTeam(input: CreateTeamInput): Promise<Team>;
 
   /**
+   * Update an existing team's name, abbreviation, and/or emoji. Only the
+   * provided fields are changed. Throws when the team does not exist.
+   */
+  updateTeam(teamId: string, updates: UpdateTeamInput): Promise<Team>;
+
+  /** Delete a team and its readiness history. Throws when it does not exist. */
+  deleteTeam(teamId: string): Promise<void>;
+
+  /**
    * Link a Discord user to a team by setting `discord_user_id`. If the user is
    * already linked to a different team, they are removed from it first so a user
    * is only ever linked to one team.
    */
   linkTeamToDiscordUser(teamId: string, discordUserId: string): Promise<Team>;
+
+  /**
+   * Remove a Discord user's link to whatever team they are currently on.
+   * Returns the team they were unlinked from, or `undefined` when the user was
+   * not linked to any team.
+   */
+  unlinkDiscordUser(discordUserId: string): Promise<Team | undefined>;
 
   /** Persist a team's readiness for the current week. */
   setReadyStatus(
@@ -229,6 +258,7 @@ export class InMemoryReadyStore implements ReadyStore {
     const abbreviation = input.abbreviation
       ? normalizeAbbreviation(input.abbreviation)
       : generateAbbreviation(name);
+    const emoji = input.emoji ? normalizeEmoji(input.emoji) : undefined;
 
     const now = new Date().toISOString();
     const team: Team = {
@@ -236,12 +266,49 @@ export class InMemoryReadyStore implements ReadyStore {
       dynastyId: this.config.dynastyId,
       name,
       abbreviation: abbreviation || undefined,
+      emoji,
       readyStatus: "NOT_READY",
       updatedAt: now,
     };
 
     this.teams.push(team);
     return { ...team };
+  }
+
+  async updateTeam(teamId: string, updates: UpdateTeamInput): Promise<Team> {
+    const team = this.teams.find((candidate) => candidate.id === teamId);
+    if (!team) {
+      throw new Error(`Unknown team: ${teamId}`);
+    }
+
+    if (updates.name !== undefined) {
+      team.name = normalizeTeamName(updates.name);
+    }
+    if (updates.abbreviation !== undefined) {
+      team.abbreviation = normalizeAbbreviation(updates.abbreviation) || undefined;
+    }
+    if (updates.emoji !== undefined) {
+      team.emoji = updates.emoji === null ? undefined : normalizeEmoji(updates.emoji);
+    }
+
+    team.updatedAt = new Date().toISOString();
+    return { ...team };
+  }
+
+  async deleteTeam(teamId: string): Promise<void> {
+    const index = this.teams.findIndex((candidate) => candidate.id === teamId);
+    if (index === -1) {
+      throw new Error(`Unknown team: ${teamId}`);
+    }
+
+    this.teams.splice(index, 1);
+
+    // Drop any readiness history for the removed team.
+    for (const key of [...this.readyStates.keys()]) {
+      if (key.endsWith(`:${teamId}`)) {
+        this.readyStates.delete(key);
+      }
+    }
   }
 
   async linkTeamToDiscordUser(teamId: string, discordUserId: string): Promise<Team> {
@@ -260,6 +327,17 @@ export class InMemoryReadyStore implements ReadyStore {
     }
 
     team.userId = discordUserId;
+    team.updatedAt = new Date().toISOString();
+    return { ...team };
+  }
+
+  async unlinkDiscordUser(discordUserId: string): Promise<Team | undefined> {
+    const team = this.teams.find((candidate) => candidate.userId === discordUserId);
+    if (!team) {
+      return undefined;
+    }
+
+    team.userId = undefined;
     team.updatedAt = new Date().toISOString();
     return { ...team };
   }
