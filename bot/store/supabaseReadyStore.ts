@@ -71,25 +71,25 @@ export class SupabaseReadyStore implements ReadyStore {
   }
 
   async getWeekState(): Promise<WeekState> {
-    const { data, error } = await this.client
-      .from(TABLES.weekStates)
-      .select("dynasty_id, week, status")
-      .eq("dynasty_id", this.config.dynastyId)
-      .order("week", { ascending: false })
-      .limit(1)
-      .maybeSingle<WeekStateRow>();
+  const { data, error } = await this.client
+    .from(TABLES.weekStates)
+    .select("dynasty_id, week, status")
+    .eq("dynasty_id", this.config.dynastyId)
+    .order("week", { ascending: false })
+    .limit(1)
+    .maybeSingle<WeekStateRow>();
 
-    if (error) {
-      throw new Error(`Failed to load week state: ${error.message}`);
-    }
-
-    if (!data) {
-      // No week has been initialized yet — create the starting week.
-      return this.upsertWeekState(this.config.startWeek, "READY_CHECK");
-    }
-
-    return this.mapWeekState(data);
+  if (error) {
+    throw new Error(`Failed to load week state: ${error.message}`);
   }
+
+  if (!data) {
+    // No week has been initialized yet — create the starting week.
+    return this.upsertWeekState(this.config.startWeek, "READY_CHECK");
+  }
+
+  return this.mapWeekState(data);
+}
 
   async setCurrentWeek(weekNumber: number): Promise<WeekState> {
     return this.upsertWeekState(weekNumber, "READY_CHECK");
