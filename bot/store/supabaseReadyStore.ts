@@ -1,5 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ReadyStore } from "@/bot/store/readyStore";
+import type { CreateTeamInput, ReadyStore } from "@/bot/store/readyStore";
+import {
+  generateAbbreviation,
+  normalizeAbbreviation,
+  normalizeTeamName,
+  slugifyTeamName,
+} from "@/bot/store/teamNaming";
 import type {
   AdvanceResult,
   LeagueConfig,
@@ -54,6 +60,16 @@ function mapTeam(row: TeamRow, status: ReadyStatus, updatedAt: string): Team {
     readyStatus: status,
     updatedAt,
   };
+}
+
+/**
+ * Escape characters that are special inside a PostgREST `ilike` pattern so
+ * user-supplied text is matched literally. The backslash is escaped first (it is
+ * the escape character itself), `%` and `_` are LIKE wildcards, and
+ * `,`/`(`/`)` would otherwise break out of the `or(...)` filter expression.
+ */
+function escapeIlike(value: string): string {
+  return value.replace(/[\\%_,()]/g, (char) => `\\${char}`);
 }
 
 /**
@@ -138,6 +154,141 @@ export class SupabaseReadyStore implements ReadyStore {
     }
 
     return data ? this.hydrateTeam(data) : undefined;
+  }
+
+  async findTeamByNameOrAbbreviation(query: string): Promise<Team | undefined> {
+    const needle = query.trim();
+    if (!needle) {
+      return undefined;
+    }
+
+    // Case-insensitive exact match on either name or abbreviation. `ilike`
+    // without wildcards behaves as a case-insensitive equality check; the
+    // escaping below neutralizes any `%`/`_` the user may have typed.
+    const escaped = escapeIlike(needle);
+    const { data, error } = await this.client
+      .from(TABLES.teams)
+      .select("id, dynasty_id, name, abbreviation, discord_user_id")
+      .eq("dynasty_id", this.config.dynastyId)
+      .or(`name.ilike.${escaped},abbreviation.ilike.${escaped}`)
+      .limit(1)
+      .maybeSingle<TeamRow>();
+
+    if (error) {
+      throw new Error(`Failed to find team "${needle}": ${error.message}`);
+    }
+
+    return data ? this.hydrateTeam(data) : undefined;
+  }
+
+  async searchTeams(query: string, limit = 25): Promise<Team[]> {
+    const needle = query.trim();
+
+    let request = this.client
+      .from(TABLES.teams)
+      .select("id, dynasty_id, name, abbreviation, discord_user_id")
+      .eq("dynasty_id", this.config.dynastyId)
+      .order("name", { ascending: true })
+      .limit(limit);
+
+    if (needle) {
+      const pattern = `%${escapeIlike(needle)}%`;
+      request = request.or(`name.ilike.${pattern},abbreviation.ilike.${pattern}`);
+    }
+
+    const { data, error } = await request;
+
+    if (error) {
+      throw new Error(`Failed to search teams: ${error.message}`);
+    }
+
+    const now = new Date().toISOString();
+    return ((data as TeamRow[] | null) ?? []).map((row) =>
+      mapTeam(row, "NOT_READY", now),
+    );
+  }
+
+  async createTeam(input: CreateTeamInput): Promise<Team> {
+    const name = normalizeTeamName(input.name);
+    const abbreviation = input.abbreviation
+      ? normalizeAbbreviation(input.abbreviation)
+      : generateAbbreviation(name);
+
+    const id = await this.generateTeamId(name);
+    const row: Pick<
+      TeamRow,
+      "id" | "dynasty_id" | "name" | "abbreviation" | "discord_user_id"
+    > = {
+      id,
+      dynasty_id: this.config.dynastyId,
+      name,
+      abbreviation: abbreviation || null,
+      discord_user_id: null,
+    };
+
+    const { data, error } = await this.client
+      .from(TABLES.teams)
+      .insert(row)
+      .select("id, dynasty_id, name, abbreviation, discord_user_id")
+      .single<TeamRow>();
+
+    if (error) {
+      throw new Error(`Failed to create team "${name}": ${error.message}`);
+    }
+
+    return mapTeam(data, "NOT_READY", new Date().toISOString());
+  }
+
+  async linkTeamToDiscordUser(teamId: string, discordUserId: string): Promise<Team> {
+    // Remove the user from any team they were previously linked to. The
+    // `discord_user_id` column is UNIQUE, so leaving a stale link would make the
+    // update below fail.
+    const { error: clearError } = await this.client
+      .from(TABLES.teams)
+      .update({ discord_user_id: null })
+      .eq("dynasty_id", this.config.dynastyId)
+      .eq("discord_user_id", discordUserId)
+      .neq("id", teamId);
+
+    if (clearError) {
+      throw new Error(
+        `Failed to unlink user ${discordUserId} from previous team: ${clearError.message}`,
+      );
+    }
+
+    const { data, error } = await this.client
+      .from(TABLES.teams)
+      .update({ discord_user_id: discordUserId })
+      .eq("dynasty_id", this.config.dynastyId)
+      .eq("id", teamId)
+      .select("id, dynasty_id, name, abbreviation, discord_user_id")
+      .single<TeamRow>();
+
+    if (error) {
+      throw new Error(`Failed to link user to team ${teamId}: ${error.message}`);
+    }
+
+    return this.hydrateTeam(data);
+  }
+
+  /** Build a team id that is unique within the dynasty. */
+  private async generateTeamId(name: string): Promise<string> {
+    const base = `team-${slugifyTeamName(name)}`;
+    let candidate = base;
+    let suffix = 2;
+
+    // Cap the loop so a pathological data set can't spin forever; after a few
+    // attempts fall back to a random suffix.
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const existing = await this.getTeamById(candidate);
+      if (!existing) {
+        return candidate;
+      }
+      candidate = `${base}-${suffix}`;
+      suffix += 1;
+    }
+
+    return `${base}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
   async setReadyStatus(

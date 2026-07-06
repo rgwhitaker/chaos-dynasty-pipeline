@@ -169,6 +169,17 @@ async function createDiscordClient(): Promise<DiscordClient> {
         return;
       }
 
+      if (interaction.isAutocomplete()) {
+        const command = commandMap.get(interaction.commandName);
+        if (command?.autocomplete) {
+          await command.autocomplete(interaction);
+        } else {
+          // No handler: respond with an empty list so the client doesn't hang.
+          await interaction.respond([]);
+        }
+        return;
+      }
+
       if (interaction.isButton()) {
         await handleReadyButton(interaction);
         return;
