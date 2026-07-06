@@ -13,6 +13,29 @@ export const MAX_TEAM_NAME_LENGTH = 100;
 export const MAX_ABBREVIATION_LENGTH = 8;
 
 /**
+ * Maximum length we accept for a team emoji. A single unicode emoji (possibly
+ * with skin-tone/ZWJ modifiers) or a Discord custom emoji mention
+ * (`<:name:id>` / `<a:name:id>`) both fit comfortably under this cap.
+ */
+export const MAX_EMOJI_LENGTH = 64;
+
+/**
+ * Trim and validate a user-entered team emoji. Returns the cleaned emoji string,
+ * or `undefined` when the input is empty (used to clear a team's emoji). Throws
+ * when the value is too long to be a plausible emoji.
+ */
+export function normalizeEmoji(emoji: string): string | undefined {
+  const trimmed = emoji.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (trimmed.length > MAX_EMOJI_LENGTH) {
+    throw new Error(`Emoji must be ${MAX_EMOJI_LENGTH} characters or fewer.`);
+  }
+  return trimmed;
+}
+
+/**
  * Convert a team name into a lowercase, hyphenated slug suitable for use in a
  * team id (e.g. "Oregon State Beavers" -> "oregon-state-beavers"). Falls back to
  * "team" when the name has no slug-able characters.

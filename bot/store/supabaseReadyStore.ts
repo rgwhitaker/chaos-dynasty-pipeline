@@ -1,8 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { CreateTeamInput, ReadyStore } from "@/bot/store/readyStore";
+import type { CreateTeamInput, ReadyStore, UpdateTeamInput } from "@/bot/store/readyStore";
 import {
   generateAbbreviation,
   normalizeAbbreviation,
+  normalizeEmoji,
   normalizeTeamName,
   slugifyTeamName,
 } from "@/bot/store/teamNaming";
@@ -25,12 +26,16 @@ const TABLES = {
   teamReadyStates: "team_ready_states",
 } as const;
 
+/** Columns selected for a team row. Kept in one place so every query agrees. */
+const TEAM_COLUMNS = "id, dynasty_id, name, abbreviation, emoji, discord_user_id";
+
 /** Row shape for the `teams` table. */
 interface TeamRow {
   id: string;
   dynasty_id: string;
   name: string;
   abbreviation: string | null;
+  emoji: string | null;
   discord_user_id: string | null;
 }
 
@@ -56,6 +61,7 @@ function mapTeam(row: TeamRow, status: ReadyStatus, updatedAt: string): Team {
     dynastyId: row.dynasty_id,
     name: row.name,
     abbreviation: row.abbreviation ?? undefined,
+    emoji: row.emoji ?? undefined,
     userId: row.discord_user_id ?? undefined,
     readyStatus: status,
     updatedAt,
@@ -129,7 +135,7 @@ export class SupabaseReadyStore implements ReadyStore {
   async getTeamById(teamId: string): Promise<Team | undefined> {
     const { data, error } = await this.client
       .from(TABLES.teams)
-      .select("id, dynasty_id, name, abbreviation, discord_user_id")
+      .select(TEAM_COLUMNS)
       .eq("dynasty_id", this.config.dynastyId)
       .eq("id", teamId)
       .maybeSingle<TeamRow>();
@@ -144,7 +150,7 @@ export class SupabaseReadyStore implements ReadyStore {
   async getTeamByDiscordUserId(discordUserId: string): Promise<Team | undefined> {
     const { data, error } = await this.client
       .from(TABLES.teams)
-      .select("id, dynasty_id, name, abbreviation, discord_user_id")
+      .select(TEAM_COLUMNS)
       .eq("dynasty_id", this.config.dynastyId)
       .eq("discord_user_id", discordUserId)
       .maybeSingle<TeamRow>();
@@ -168,7 +174,7 @@ export class SupabaseReadyStore implements ReadyStore {
     const escaped = escapeIlike(needle);
     const { data, error } = await this.client
       .from(TABLES.teams)
-      .select("id, dynasty_id, name, abbreviation, discord_user_id")
+      .select(TEAM_COLUMNS)
       .eq("dynasty_id", this.config.dynastyId)
       .or(`name.ilike.${escaped},abbreviation.ilike.${escaped}`)
       .limit(1)
@@ -186,7 +192,7 @@ export class SupabaseReadyStore implements ReadyStore {
 
     let request = this.client
       .from(TABLES.teams)
-      .select("id, dynasty_id, name, abbreviation, discord_user_id")
+      .select(TEAM_COLUMNS)
       .eq("dynasty_id", this.config.dynastyId)
       .order("name", { ascending: true })
       .limit(limit);
@@ -213,23 +219,25 @@ export class SupabaseReadyStore implements ReadyStore {
     const abbreviation = input.abbreviation
       ? normalizeAbbreviation(input.abbreviation)
       : generateAbbreviation(name);
+    const emoji = input.emoji ? normalizeEmoji(input.emoji) : undefined;
 
     const id = await this.generateTeamId(name);
     const row: Pick<
       TeamRow,
-      "id" | "dynasty_id" | "name" | "abbreviation" | "discord_user_id"
+      "id" | "dynasty_id" | "name" | "abbreviation" | "emoji" | "discord_user_id"
     > = {
       id,
       dynasty_id: this.config.dynastyId,
       name,
       abbreviation: abbreviation || null,
+      emoji: emoji ?? null,
       discord_user_id: null,
     };
 
     const { data, error } = await this.client
       .from(TABLES.teams)
       .insert(row)
-      .select("id, dynasty_id, name, abbreviation, discord_user_id")
+      .select(TEAM_COLUMNS)
       .single<TeamRow>();
 
     if (error) {
@@ -237,6 +245,65 @@ export class SupabaseReadyStore implements ReadyStore {
     }
 
     return mapTeam(data, "NOT_READY", new Date().toISOString());
+  }
+
+  async updateTeam(teamId: string, updates: UpdateTeamInput): Promise<Team> {
+    const patch: Partial<Pick<TeamRow, "name" | "abbreviation" | "emoji">> = {};
+
+    if (updates.name !== undefined) {
+      patch.name = normalizeTeamName(updates.name);
+    }
+    if (updates.abbreviation !== undefined) {
+      patch.abbreviation = normalizeAbbreviation(updates.abbreviation) || null;
+    }
+    if (updates.emoji !== undefined) {
+      patch.emoji = updates.emoji === null ? null : (normalizeEmoji(updates.emoji) ?? null);
+    }
+
+    // Nothing to change — return the current team so callers get a fresh copy.
+    if (Object.keys(patch).length === 0) {
+      const existing = await this.getTeamById(teamId);
+      if (!existing) {
+        throw new Error(`Unknown team: ${teamId}`);
+      }
+      return existing;
+    }
+
+    const { data, error } = await this.client
+      .from(TABLES.teams)
+      .update(patch)
+      .eq("dynasty_id", this.config.dynastyId)
+      .eq("id", teamId)
+      .select(TEAM_COLUMNS)
+      .maybeSingle<TeamRow>();
+
+    if (error) {
+      throw new Error(`Failed to update team ${teamId}: ${error.message}`);
+    }
+    if (!data) {
+      throw new Error(`Unknown team: ${teamId}`);
+    }
+
+    return this.hydrateTeam(data);
+  }
+
+  async deleteTeam(teamId: string): Promise<void> {
+    // `team_ready_states` rows cascade on delete (see schema), so removing the
+    // team row is enough to clean up its readiness history.
+    const { data, error } = await this.client
+      .from(TABLES.teams)
+      .delete()
+      .eq("dynasty_id", this.config.dynastyId)
+      .eq("id", teamId)
+      .select("id")
+      .maybeSingle<{ id: string }>();
+
+    if (error) {
+      throw new Error(`Failed to delete team ${teamId}: ${error.message}`);
+    }
+    if (!data) {
+      throw new Error(`Unknown team: ${teamId}`);
+    }
   }
 
   async linkTeamToDiscordUser(teamId: string, discordUserId: string): Promise<Team> {
@@ -261,7 +328,7 @@ export class SupabaseReadyStore implements ReadyStore {
       .update({ discord_user_id: discordUserId })
       .eq("dynasty_id", this.config.dynastyId)
       .eq("id", teamId)
-      .select("id, dynasty_id, name, abbreviation, discord_user_id")
+      .select(TEAM_COLUMNS)
       .single<TeamRow>();
 
     if (error) {
@@ -269,6 +336,22 @@ export class SupabaseReadyStore implements ReadyStore {
     }
 
     return this.hydrateTeam(data);
+  }
+
+  async unlinkDiscordUser(discordUserId: string): Promise<Team | undefined> {
+    const { data, error } = await this.client
+      .from(TABLES.teams)
+      .update({ discord_user_id: null })
+      .eq("dynasty_id", this.config.dynastyId)
+      .eq("discord_user_id", discordUserId)
+      .select(TEAM_COLUMNS)
+      .maybeSingle<TeamRow>();
+
+    if (error) {
+      throw new Error(`Failed to unlink user ${discordUserId}: ${error.message}`);
+    }
+
+    return data ? this.hydrateTeam(data) : undefined;
   }
 
   /** Build a team id that is unique within the dynasty. */
@@ -399,7 +482,7 @@ export class SupabaseReadyStore implements ReadyStore {
   private async fetchTeamRows(): Promise<TeamRow[]> {
     const { data, error } = await this.client
       .from(TABLES.teams)
-      .select("id, dynasty_id, name, abbreviation, discord_user_id")
+      .select(TEAM_COLUMNS)
       .eq("dynasty_id", this.config.dynastyId)
       .order("name", { ascending: true });
 

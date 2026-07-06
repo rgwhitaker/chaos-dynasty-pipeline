@@ -23,7 +23,7 @@ It combines:
 - `bot/start.ts` – bot startup entry point (config validation, login, graceful shutdown)
 - `bot/client.ts` – Discord client factory, command registration, gateway lifecycle logging
 - `bot/config.ts` / `bot/logger.ts` – env configuration/validation and structured logging
-- `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/register`, `/set-ready`, `/ping`)
+- `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/register`, `/set-ready`, `/set-emoji`, `/edit-team`, `/unlink`, `/delete-team`, `/ping`)
 - `bot/store/` – ready-to-advance state store (Supabase-backed, with an in-memory fallback)
 - `bot/ui/` – Discord message/embed + button builders
 - `lib/types/` – Core domain types
@@ -81,6 +81,10 @@ The core weekly coordination flow lives in `bot/`:
   - `/advance` – advance to the next week when enough teams are ready. Restricted to commissioners (configured role or Manage Server permission).
   - `/register <user> <team>` – link a Discord user to a team, creating the team if it doesn't exist yet. Restricted to commissioners (same permission rule as `/advance`). The `team` option has autocomplete that searches existing teams by name or abbreviation.
   - `/set-ready <user> <ready>` – set another user's team ready status for the current week, even if they never marked ready themselves. Restricted to commissioners (same permission rule as `/advance`). Returns a clear error if the target user isn't linked to a team, and shows an updated ready summary.
+  - `/set-emoji <team> [emoji]` – set (or clear) the emoji shown next to a team's name in `/status` and other messages. Restricted to commissioners. The `team` option has autocomplete; leave `emoji` empty to remove a team's emoji.
+  - `/edit-team <team> [name] [abbreviation]` – rename a team and/or change its abbreviation. Restricted to commissioners. The `team` option has autocomplete; provide at least one of `name`/`abbreviation`.
+  - `/unlink <user>` – remove a user's link to their current team (without deleting the team). Restricted to commissioners.
+  - `/delete-team <team> [force]` – permanently delete a team. Restricted to commissioners. The `team` option has autocomplete. As a safety check, deletion is refused while a user is still linked unless `force:true` is passed.
   - `/ping` – simple liveness check.
 - `bot/store/readyStore.ts` – the `ReadyStore` interface plus the in-memory implementation (`InMemoryReadyStore`) used as a local-dev fallback. `getReadyStore()` selects the Supabase-backed store when credentials are present.
 - `bot/store/supabaseReadyStore.ts` – `SupabaseReadyStore`, the persistent implementation of `ReadyStore` backed by Supabase (`teams`, `week_states`, `team_ready_states`).
@@ -195,6 +199,44 @@ Commissioners link Discord users to teams with `/register` instead of editing
   message, and team names longer than 100 characters are rejected.
 
 Replies are ephemeral so registration actions stay out of the public channel.
+
+### Team emojis
+
+Give each team an emoji that shows up next to its name in `/status` and the other
+ready-check messages. Commissioners set it with `/set-emoji`:
+
+```text
+/set-emoji team:Oregon State Beavers emoji:🦫
+```
+
+- **Team selection** uses autocomplete (search existing teams by name or
+  abbreviation).
+- **Emoji** may be a standard Unicode emoji or a Discord custom emoji. Custom
+  emojis only render in embeds when the bot shares a server that has them, so
+  prefer Unicode emojis for cross-server reliability.
+- **Removing an emoji:** run `/set-emoji` for the team and leave the `emoji`
+  option empty.
+
+The `emoji` value is stored on the `teams` table (`emoji` column). Databases
+created before this feature are upgraded automatically when you re-run
+[`supabase/schema.sql`](supabase/schema.sql) (it adds the column with
+`alter table ... add column if not exists`).
+
+### Managing teams and links
+
+Commissioners have a few more tools for keeping the roster tidy. All are
+restricted to the commissioner role (`DISCORD_COMMISSIONER_ROLE_ID`) or the
+Manage Server permission, reply ephemerally, and use autocomplete for team
+selection where relevant.
+
+- `/edit-team team:<team> [name:<new name>] [abbreviation:<ABBR>]` – rename a
+  team and/or change its abbreviation. Provide at least one field to change.
+- `/unlink user:@Alex` – remove a user's link to their current team without
+  deleting the team. Returns a friendly no-op message if the user isn't linked.
+- `/delete-team team:<team> [force:true]` – permanently delete a team. If a user
+  is still linked, the command refuses and suggests running `/unlink` first;
+  pass `force:true` to delete anyway. Deleting a team also removes its readiness
+  history.
 
 ## Near-term roadmap
 
