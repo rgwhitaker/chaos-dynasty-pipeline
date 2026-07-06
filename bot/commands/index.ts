@@ -5,6 +5,7 @@ import { deleteTeamCommand } from "@/bot/commands/deleteTeam";
 import { editTeamCommand } from "@/bot/commands/editTeam";
 import { newspaperCommand } from "@/bot/commands/newspaper";
 import { pingCommand } from "@/bot/commands/ping";
+import { processVideoCommand } from "@/bot/commands/processVideo";
 import { readyCommand } from "@/bot/commands/ready";
 import { registerCommand } from "@/bot/commands/register";
 import { setEmojiCommand } from "@/bot/commands/setEmoji";
@@ -27,6 +28,7 @@ export const commands: BotCommand[] = [
   unlinkCommand,
   deleteTeamCommand,
   pingCommand,
+  processVideoCommand,
 ];
 
 /** Lookup by command name, used by the interaction dispatcher. */

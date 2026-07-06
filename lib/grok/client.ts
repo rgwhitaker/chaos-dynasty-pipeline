@@ -18,6 +18,11 @@ type ChatCompletionResponse = {
 
 const GROK_API_URL = process.env.XAI_API_BASE_URL ?? "https://api.x.ai/v1/chat/completions";
 
+/** The vision model used for screenshot/frame analysis. */
+export function visionModel(): string {
+  return process.env.XAI_MODEL_VISION ?? "grok-2-vision-latest";
+}
+
 async function requestGrok(model: string, messages: GrokMessage[]) {
   const apiKey = process.env.XAI_API_KEY;
 
@@ -65,9 +70,7 @@ export async function generateNarrative(prompt: string, systemPrompt?: string) {
 }
 
 export async function analyzeScreenshot(imageUrl: string, prompt: string) {
-  const visionModel = process.env.XAI_MODEL_VISION ?? "grok-2-vision-latest";
-
-  return requestGrok(visionModel, [
+  return requestGrok(visionModel(), [
     {
       role: "user",
       content: [
@@ -76,4 +79,40 @@ export async function analyzeScreenshot(imageUrl: string, prompt: string) {
       ],
     },
   ]);
+}
+
+/**
+ * Analyze several images together with a single prompt using the Grok vision
+ * model. Used by the video pipeline to send a handful of extracted frames so the
+ * model can reconcile a box score across multiple stills. `imageUrls` may be
+ * public URLs or base64 `data:` URLs.
+ */
+export async function analyzeImages(
+  imageUrls: string[],
+  prompt: string,
+  systemPrompt?: string,
+) {
+  if (imageUrls.length === 0) {
+    throw new Error("analyzeImages requires at least one image.");
+  }
+
+  const visionModelName = visionModel();
+
+  const messages: GrokMessage[] = [];
+  if (systemPrompt) {
+    messages.push({ role: "system", content: systemPrompt });
+  }
+
+  messages.push({
+    role: "user",
+    content: [
+      { type: "text", text: prompt },
+      ...imageUrls.map((url) => ({
+        type: "image_url" as const,
+        image_url: { url },
+      })),
+    ],
+  });
+
+  return requestGrok(visionModelName, messages);
 }
