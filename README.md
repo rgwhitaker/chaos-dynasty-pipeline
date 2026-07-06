@@ -20,6 +20,9 @@ It combines:
 
 - `app/` – App Router UI and pages
 - `bot/` – Discord bot client and interaction handlers
+- `bot/start.ts` – bot startup entry point (config validation, login, graceful shutdown)
+- `bot/client.ts` – Discord client factory, command registration, gateway lifecycle logging
+- `bot/config.ts` / `bot/logger.ts` – env configuration/validation and structured logging
 - `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/ping`)
 - `bot/store/` – ready-to-advance state store (Supabase-backed, with an in-memory fallback)
 - `bot/ui/` – Discord message/embed + button builders
@@ -50,11 +53,23 @@ Then open `http://localhost:3000`.
 
 ## Discord bot startup behavior
 
-- The bot is initialized from `instrumentation.ts`.
+- The bot is initialized from `instrumentation.ts`, which delegates to
+  `bot/start.ts` (the single startup entry point). `bot/start.ts` validates
+  configuration, logs the client in, registers commands, and wires up graceful
+  shutdown handlers (SIGINT/SIGTERM) so the bot disconnects cleanly on deploys.
 - Set `DISCORD_BOT_ENABLED=true` and provide `DISCORD_BOT_TOKEN` to enable login.
+  Startup is a safe no-op (with a log line) when disabled or misconfigured, so it
+  never crashes the Next.js host process.
 - On startup the bot registers its slash commands **guild-scoped** using
   `DISCORD_APPLICATION_ID` + `DISCORD_GUILD_ID` (guild commands update instantly,
-  which is ideal for local testing).
+  which is ideal for local testing). See `registerGuildCommands` in
+  `bot/client.ts` for how to switch to global commands later.
+- Gateway lifecycle events (errors, warnings, disconnects, reconnects, resumes)
+  and REST rate limits are logged with clear `[Bot]` / `[Warn]` / `[Error]`
+  prefixes (see `bot/logger.ts`).
+- Because all startup logic lives in `bot/start.ts`, the bot can later be run as
+  a **separate process/service** on Railway (its own start command calling
+  `startBot()`), independent of the Next.js server.
 
 ## Ready-to-Advance system
 

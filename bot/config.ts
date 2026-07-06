@@ -47,3 +47,68 @@ export function getGuildId(): string | undefined {
 export function getApplicationId(): string | undefined {
   return process.env.DISCORD_APPLICATION_ID?.trim() || undefined;
 }
+
+/** The Discord bot token used to log in to the gateway. */
+export function getBotToken(): string | undefined {
+  return process.env.DISCORD_BOT_TOKEN?.trim() || undefined;
+}
+
+/**
+ * Whether the bot should attempt to start/log in. Defaults to disabled so the
+ * Next.js app can run (build, preview, tests) without Discord credentials.
+ */
+export function isBotEnabled(): boolean {
+  return process.env.DISCORD_BOT_ENABLED?.trim().toLowerCase() === "true";
+}
+
+/**
+ * Resolved, validated bot configuration.
+ *
+ * `errors` lists any missing *required* values that prevent login; `warnings`
+ * lists missing *optional* values that only degrade functionality (for example
+ * a missing application/guild id means commands can't be registered, but the
+ * bot can still log in). Callers should refuse to start when `errors` is
+ * non-empty and surface `warnings` for visibility.
+ */
+export interface BotConfig {
+  enabled: boolean;
+  token?: string;
+  applicationId?: string;
+  guildId?: string;
+  errors: string[];
+  warnings: string[];
+}
+
+/**
+ * Read and validate the Discord bot configuration from the environment in one
+ * place, so startup logic doesn't have to re-check individual variables.
+ */
+export function getBotConfig(): BotConfig {
+  const enabled = isBotEnabled();
+  const token = getBotToken();
+  const applicationId = getApplicationId();
+  const guildId = getGuildId();
+
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!token) {
+    errors.push("DISCORD_BOT_TOKEN is required to log in.");
+  }
+
+  // Command registration is guild-scoped for now and needs both ids. Missing
+  // ids are non-fatal: the bot can still log in and respond to existing
+  // (already-registered) commands.
+  if (!applicationId) {
+    warnings.push(
+      "DISCORD_APPLICATION_ID is missing; slash commands will not be registered.",
+    );
+  }
+  if (!guildId) {
+    warnings.push(
+      "DISCORD_GUILD_ID is missing; guild-scoped slash commands will not be registered.",
+    );
+  }
+
+  return { enabled, token, applicationId, guildId, errors, warnings };
+}
