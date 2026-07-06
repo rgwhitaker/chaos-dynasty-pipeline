@@ -39,14 +39,34 @@ export async function handleReadyButton(interaction: ButtonInteraction): Promise
 
   // The refresh button just re-renders the current status for everyone.
   if (customId === READY_BUTTON_IDS.refresh) {
-    const summary = await store.getReadySummary();
-    const message = await buildReadyStatusMessage(summary);
-    await interaction.update(message);
+    await interaction.deferUpdate();
+    try {
+      const summary = await store.getReadySummary();
+      const message = await buildReadyStatusMessage(summary);
+      await interaction.editReply(message);
+    } catch (error) {
+      console.error("[ready-button] Failed to refresh status", error);
+      await interaction.followUp({
+        content: "Sorry, I couldn't refresh the status right now. Please try again shortly.",
+        ephemeral: true,
+      });
+    }
     return true;
   }
 
   // Mark/unmark buttons require a linked team (same rule as `/ready`).
-  const team = await store.getTeamByDiscordUserId(interaction.user.id);
+  let team;
+  try {
+    team = await store.getTeamByDiscordUserId(interaction.user.id);
+  } catch (error) {
+    console.error("[ready-button] Failed to look up linked team", error);
+    await interaction.reply({
+      content: "Sorry, I couldn't reach the league data right now. Please try again shortly.",
+      ephemeral: true,
+    });
+    return true;
+  }
+
   if (!team) {
     await interaction.reply({
       content:
@@ -57,12 +77,21 @@ export async function handleReadyButton(interaction: ButtonInteraction): Promise
     return true;
   }
 
-  const wantsReady = customId === READY_BUTTON_IDS.markReady;
-  await store.setReadyStatus(team.id, wantsReady ? "READY" : "NOT_READY", interaction.user.id);
+  await interaction.deferUpdate();
+  try {
+    const wantsReady = customId === READY_BUTTON_IDS.markReady;
+    await store.setReadyStatus(team.id, wantsReady ? "READY" : "NOT_READY", interaction.user.id);
 
-  const summary = await store.getReadySummary();
-  const message = await buildReadyStatusMessage(summary);
-  // Update the shared status message in place so everyone sees the change.
-  await interaction.update(message);
+    const summary = await store.getReadySummary();
+    const message = await buildReadyStatusMessage(summary);
+    // Update the shared status message in place so everyone sees the change.
+    await interaction.editReply(message);
+  } catch (error) {
+    console.error("[ready-button] Failed to update ready status", error);
+    await interaction.followUp({
+      content: "Sorry, I couldn't update your ready status right now. Please try again shortly.",
+      ephemeral: true,
+    });
+  }
   return true;
 }

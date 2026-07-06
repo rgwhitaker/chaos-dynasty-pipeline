@@ -1,8 +1,8 @@
 import type { LeagueConfig } from "@/lib/types";
 
 /**
- * Default dynasty id used while everything lives in memory. Once we move state
- * into Supabase this will come from the selected/active dynasty row instead.
+ * Default dynasty id used when `LEAGUE_DYNASTY_ID` is not set. This scopes the
+ * Supabase rows (teams, week_states, team_ready_states) the bot coordinates.
  */
 export const DEFAULT_DYNASTY_ID = "default";
 

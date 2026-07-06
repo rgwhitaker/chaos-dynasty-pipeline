@@ -15,10 +15,21 @@ export const statusCommand: BotCommand = {
     .setDescription("Show the current week and which teams are ready to advance."),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    const store = getReadyStore();
-    const summary = await store.getReadySummary();
-    const message = await buildReadyStatusMessage(summary);
+    // Defer immediately so we stay within Discord's 3s window while we hit the
+    // (potentially remote) store. The reply stays ephemeral to avoid spam.
+    await interaction.deferReply({ ephemeral: true });
 
-    await interaction.reply({ ...message, ephemeral: true });
+    try {
+      const store = getReadyStore();
+      const summary = await store.getReadySummary();
+      const message = await buildReadyStatusMessage(summary);
+
+      await interaction.editReply(message);
+    } catch (error) {
+      console.error("[status] Failed to load ready summary", error);
+      await interaction.editReply({
+        content: "Sorry, I couldn't load the ready status right now. Please try again shortly.",
+      });
+    }
   },
 };

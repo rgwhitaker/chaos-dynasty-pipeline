@@ -1,4 +1,9 @@
 import { getLeagueConfig } from "@/bot/config";
+import { SupabaseReadyStore } from "@/bot/store/supabaseReadyStore";
+import {
+  getSupabaseServiceClient,
+  hasSupabaseServiceCredentials,
+} from "@/lib/supabase/service";
 import type {
   AdvanceResult,
   LeagueConfig,
@@ -244,10 +249,24 @@ const globalForStore = globalThis as typeof globalThis & {
 /**
  * Singleton accessor. Uses a global so the store survives Next.js hot reloads in
  * development (same trick used for the Discord client).
+ *
+ * When Supabase service credentials are configured the persistent
+ * {@link SupabaseReadyStore} is used; otherwise it falls back to the in-memory
+ * store so local development works without any external dependencies.
  */
 export function getReadyStore(): ReadyStore {
   if (!globalForStore.readyStore) {
-    globalForStore.readyStore = new InMemoryReadyStore(getLeagueConfig());
+    const config = getLeagueConfig();
+
+    if (hasSupabaseServiceCredentials()) {
+      globalForStore.readyStore = new SupabaseReadyStore(config, getSupabaseServiceClient());
+    } else {
+      console.warn(
+        "[ready-store] Supabase credentials not found; using in-memory store. " +
+          "State will not persist across restarts.",
+      );
+      globalForStore.readyStore = new InMemoryReadyStore(config);
+    }
   }
 
   return globalForStore.readyStore;
