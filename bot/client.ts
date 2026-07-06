@@ -13,7 +13,6 @@ const globalForBot = globalThis as typeof globalThis & {
   discordBotStarted?: boolean;
   discordRuntime?: DiscordRuntime;
 };
-const dynamicRequire = eval("require") as NodeRequire;
 
 const commandHandlers = new Map<string, SlashCommandHandler>();
 
@@ -22,12 +21,14 @@ commandHandlers.set("ping", async (interaction) => {
     return;
   }
 
-  await interaction.reply({ content: "🏈 Pong from Chaos Dynasty Pipeline.", ephemeral: true });
+  await interaction.reply({ content: "Pong from Chaos Dynasty Pipeline.", ephemeral: true });
 });
 
 async function getDiscordRuntime(): Promise<DiscordRuntime> {
   if (!globalForBot.discordRuntime) {
-    const { Client, Events, GatewayIntentBits } = dynamicRequire("discord.js") as typeof import("discord.js");
+    const { Client, Events, GatewayIntentBits } = await import(
+      /* webpackIgnore: true */ "discord.js"
+    );
     globalForBot.discordRuntime = {
       Client,
       Events,
@@ -77,7 +78,14 @@ async function createDiscordClient(): Promise<DiscordClient> {
 
       if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
         await interaction.reply({
-          content: "An unexpected error occurred while processing the interaction.",
+          content:
+            "An unexpected error occurred while processing the interaction. The issue has been logged.",
+          ephemeral: true,
+        });
+      } else if (interaction.isRepliable()) {
+        await interaction.followUp({
+          content:
+            "An unexpected error occurred while processing the interaction. The issue has been logged.",
           ephemeral: true,
         });
       }

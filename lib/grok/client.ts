@@ -17,8 +17,6 @@ type ChatCompletionResponse = {
 };
 
 const GROK_API_URL = process.env.XAI_API_BASE_URL ?? "https://api.x.ai/v1/chat/completions";
-const TEXT_MODEL = process.env.XAI_MODEL_TEXT ?? "grok-3-latest";
-const VISION_MODEL = process.env.XAI_MODEL_VISION ?? "grok-2-vision-latest";
 
 async function requestGrok(model: string, messages: GrokMessage[]) {
   const apiKey = process.env.XAI_API_KEY;
@@ -38,11 +36,19 @@ async function requestGrok(model: string, messages: GrokMessage[]) {
 
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(`Grok API error (${response.status}): ${errorBody}`);
+    throw new Error(
+      `Grok API error (${response.status} ${response.statusText}): ${errorBody}`,
+    );
   }
 
   const data = (await response.json()) as ChatCompletionResponse;
-  return data.choices?.[0]?.message?.content ?? "";
+  const content = data.choices?.[0]?.message?.content;
+
+  if (!content) {
+    throw new Error("Grok API response did not include completion content.");
+  }
+
+  return content;
 }
 
 export async function generateNarrative(prompt: string, systemPrompt?: string) {
@@ -54,11 +60,14 @@ export async function generateNarrative(prompt: string, systemPrompt?: string) {
 
   messages.push({ role: "user", content: prompt });
 
-  return requestGrok(TEXT_MODEL, messages);
+  const textModel = process.env.XAI_MODEL_TEXT ?? "grok-3-latest";
+  return requestGrok(textModel, messages);
 }
 
 export async function analyzeScreenshot(imageUrl: string, prompt: string) {
-  return requestGrok(VISION_MODEL, [
+  const visionModel = process.env.XAI_MODEL_VISION ?? "grok-2-vision-latest";
+
+  return requestGrok(visionModel, [
     {
       role: "user",
       content: [
