@@ -23,7 +23,7 @@ It combines:
 - `bot/start.ts` – bot startup entry point (config validation, login, graceful shutdown)
 - `bot/client.ts` – Discord client factory, command registration, gateway lifecycle logging
 - `bot/config.ts` / `bot/logger.ts` – env configuration/validation and structured logging
-- `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/ping`)
+- `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/register`, `/ping`)
 - `bot/store/` – ready-to-advance state store (Supabase-backed, with an in-memory fallback)
 - `bot/ui/` – Discord message/embed + button builders
 - `lib/types/` – Core domain types
@@ -79,6 +79,7 @@ The core weekly coordination flow lives in `bot/`:
   - `/ready [ready:true|false]` – mark **your** team ready (or not ready) for the current week. Only users linked to a team may use it.
   - `/status` – show the current week and which teams are ready / not ready.
   - `/advance` – advance to the next week when enough teams are ready. Restricted to commissioners (configured role or Manage Server permission).
+  - `/register <user> <team>` – link a Discord user to a team, creating the team if it doesn't exist yet. Restricted to commissioners (same permission rule as `/advance`). The `team` option has autocomplete that searches existing teams by name or abbreviation.
   - `/ping` – simple liveness check.
 - `bot/store/readyStore.ts` – the `ReadyStore` interface plus the in-memory implementation (`InMemoryReadyStore`) used as a local-dev fallback. `getReadyStore()` selects the Supabase-backed store when credentials are present.
 - `bot/store/supabaseReadyStore.ts` – `SupabaseReadyStore`, the persistent implementation of `ReadyStore` backed by Supabase (`teams`, `week_states`, `team_ready_states`).
@@ -166,6 +167,33 @@ The seed provides four demo teams: `team-thunder`, `team-reign`, `team-blitz`, `
 
 > With Supabase configured, state persists across restarts. Without it, the
 > in-memory fallback resets when the dev server restarts.
+
+### Registering users to teams
+
+Commissioners link Discord users to teams with `/register` instead of editing
+`discord_user_id` by hand. Only users with the commissioner role
+(`DISCORD_COMMISSIONER_ROLE_ID`) or the Manage Server permission can run it.
+
+```text
+/register user:@Alex team:Oregon State Beavers
+```
+
+- **Existing team:** matched case-insensitively by name **or** abbreviation, so
+  `/register user:@Alex team:ORST` links to the same "Oregon State Beavers" team.
+  Start typing in the `team` field to pick from autocomplete suggestions
+  (existing teams matching what you've typed, up to 25 results).
+- **New team:** if no team matches, one is created automatically. A short
+  abbreviation is generated from the name when an obvious one isn't provided
+  (initials for multi-word names, e.g. "Oregon State Beavers" → `OSB`; the first
+  few letters for single-word names, e.g. "Liberty" → `LIBE`).
+- **Re-assigning a user:** if the user was already linked to a different team,
+  they are removed from it first so each user is only ever on one team. The reply
+  notes the move, e.g. *"Registered @Alex to **Liberty Flames** (moved from
+  **Oregon State Beavers**)."*
+- **Edge cases:** a user already on the requested team gets a friendly no-op
+  message, and team names longer than 100 characters are rejected.
+
+Replies are ephemeral so registration actions stay out of the public channel.
 
 ## Near-term roadmap
 

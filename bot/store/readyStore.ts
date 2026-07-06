@@ -1,6 +1,12 @@
 import { getLeagueConfig } from "@/bot/config";
 import { SupabaseReadyStore } from "@/bot/store/supabaseReadyStore";
 import {
+  generateAbbreviation,
+  normalizeAbbreviation,
+  normalizeTeamName,
+  slugifyTeamName,
+} from "@/bot/store/teamNaming";
+import {
   getSupabaseServiceClient,
   hasSupabaseServiceCredentials,
 } from "@/lib/supabase/service";
@@ -14,6 +20,14 @@ import type {
   TeamReadyState,
   WeekState,
 } from "@/lib/types";
+
+/** Input used to create a new team via the store. */
+export interface CreateTeamInput {
+  /** Human-readable team name (already validated for length by the caller). */
+  name: string;
+  /** Optional short abbreviation; generated from the name when omitted. */
+  abbreviation?: string;
+}
 
 /**
  * Storage contract for the ready-to-advance system.
@@ -33,6 +47,29 @@ export interface ReadyStore {
   getTeamById(teamId: string): Promise<Team | undefined>;
   /** Find the team a Discord user is linked to, if any. */
   getTeamByDiscordUserId(discordUserId: string): Promise<Team | undefined>;
+
+  /**
+   * Find a team whose name or abbreviation matches `query` (case-insensitive,
+   * exact match). Used by `/register` to detect existing teams.
+   */
+  findTeamByNameOrAbbreviation(query: string): Promise<Team | undefined>;
+
+  /**
+   * Search teams by name or abbreviation for autocomplete. Matches are
+   * case-insensitive substring matches; results are capped at `limit` (default
+   * 25, Discord's autocomplete maximum).
+   */
+  searchTeams(query: string, limit?: number): Promise<Team[]>;
+
+  /** Create a new team record and return it. */
+  createTeam(input: CreateTeamInput): Promise<Team>;
+
+  /**
+   * Link a Discord user to a team by setting `discord_user_id`. If the user is
+   * already linked to a different team, they are removed from it first so a user
+   * is only ever linked to one team.
+   */
+  linkTeamToDiscordUser(teamId: string, discordUserId: string): Promise<Team>;
 
   /** Persist a team's readiness for the current week. */
   setReadyStatus(
@@ -155,6 +192,88 @@ export class InMemoryReadyStore implements ReadyStore {
   async getTeamByDiscordUserId(discordUserId: string): Promise<Team | undefined> {
     const team = this.teams.find((candidate) => candidate.userId === discordUserId);
     return team ? { ...team } : undefined;
+  }
+
+  async findTeamByNameOrAbbreviation(query: string): Promise<Team | undefined> {
+    const needle = query.trim().toLowerCase();
+    if (!needle) {
+      return undefined;
+    }
+
+    const team = this.teams.find(
+      (candidate) =>
+        candidate.name.toLowerCase() === needle ||
+        candidate.abbreviation?.toLowerCase() === needle,
+    );
+    return team ? { ...team } : undefined;
+  }
+
+  async searchTeams(query: string, limit = 25): Promise<Team[]> {
+    const needle = query.trim().toLowerCase();
+
+    const matches = this.teams.filter((candidate) => {
+      if (!needle) {
+        return true;
+      }
+      return (
+        candidate.name.toLowerCase().includes(needle) ||
+        (candidate.abbreviation?.toLowerCase().includes(needle) ?? false)
+      );
+    });
+
+    return matches.slice(0, limit).map((team) => ({ ...team }));
+  }
+
+  async createTeam(input: CreateTeamInput): Promise<Team> {
+    const name = normalizeTeamName(input.name);
+    const abbreviation = input.abbreviation
+      ? normalizeAbbreviation(input.abbreviation)
+      : generateAbbreviation(name);
+
+    const now = new Date().toISOString();
+    const team: Team = {
+      id: this.generateTeamId(name),
+      dynastyId: this.config.dynastyId,
+      name,
+      abbreviation: abbreviation || undefined,
+      readyStatus: "NOT_READY",
+      updatedAt: now,
+    };
+
+    this.teams.push(team);
+    return { ...team };
+  }
+
+  async linkTeamToDiscordUser(teamId: string, discordUserId: string): Promise<Team> {
+    const team = this.teams.find((candidate) => candidate.id === teamId);
+    if (!team) {
+      throw new Error(`Unknown team: ${teamId}`);
+    }
+
+    // Remove the user from any team they were previously linked to so each user
+    // is only ever linked to a single team.
+    for (const other of this.teams) {
+      if (other.id !== teamId && other.userId === discordUserId) {
+        other.userId = undefined;
+        other.updatedAt = new Date().toISOString();
+      }
+    }
+
+    team.userId = discordUserId;
+    team.updatedAt = new Date().toISOString();
+    return { ...team };
+  }
+
+  /** Build a unique team id from a name, appending a suffix on collision. */
+  private generateTeamId(name: string): string {
+    const base = `team-${slugifyTeamName(name)}`;
+    let candidate = base;
+    let suffix = 2;
+    while (this.teams.some((team) => team.id === candidate)) {
+      candidate = `${base}-${suffix}`;
+      suffix += 1;
+    }
+    return candidate;
   }
 
   async setReadyStatus(
