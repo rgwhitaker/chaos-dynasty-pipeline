@@ -68,6 +68,29 @@ create table if not exists public.newspapers (
 create index if not exists newspapers_dynasty_week_idx
   on public.newspapers (dynasty_id, week, generated_at desc);
 
+-- Box scores (from videos) --------------------------------------------------
+-- One row per Box Score extracted from an uploaded game video by
+-- `/process-video`. The full structured result (team names, scores, quarter
+-- scores, stats) is stored in `data` (JSONB) so the shape can evolve without
+-- migrations; a few common fields are also promoted to columns for easy
+-- querying/joins. `week` is nullable because the uploader may not tag a week.
+create table if not exists public.box_scores (
+  id           text primary key,
+  dynasty_id   text not null default 'default',
+  week         integer,
+  home_team    text,
+  home_score   integer,
+  away_team    text,
+  away_score   integer,
+  data         jsonb not null,
+  model        text,
+  source_video text,
+  created_at   timestamptz not null default now()
+);
+
+create index if not exists box_scores_dynasty_week_idx
+  on public.box_scores (dynasty_id, week, created_at desc);
+
 -- Row level security ----------------------------------------------------------
 -- The Discord bot talks to Supabase with the service role key, which bypasses
 -- RLS. Enabling RLS with no public policies keeps these tables private from the
@@ -76,3 +99,4 @@ alter table public.teams enable row level security;
 alter table public.week_states enable row level security;
 alter table public.team_ready_states enable row level security;
 alter table public.newspapers enable row level security;
+alter table public.box_scores enable row level security;

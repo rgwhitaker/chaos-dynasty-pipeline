@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
     "@discordjs/ws",
     "undici",
     "node-fetch",
+    "fluent-ffmpeg",
+    "ffmpeg-static",
+    "ffprobe-static",
   ],
 };
 

@@ -23,13 +23,15 @@ It combines:
 - `bot/start.ts` – bot startup entry point (config validation, login, graceful shutdown)
 - `bot/client.ts` – Discord client factory, command registration, gateway lifecycle logging
 - `bot/config.ts` / `bot/logger.ts` – env configuration/validation and structured logging
-- `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/newspaper`, `/register`, `/set-ready`, `/set-emoji`, `/edit-team`, `/unlink`, `/delete-team`, `/ping`)
-- `bot/store/` – ready-to-advance state store + weekly newspaper store (Supabase-backed, with an in-memory fallback)
+- `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/newspaper`, `/register`, `/set-ready`, `/set-emoji`, `/edit-team`, `/unlink`, `/delete-team`, `/ping`, `/process-video`)
+- `bot/store/` – ready-to-advance state store + weekly newspaper store + box score store (Supabase-backed, with an in-memory fallback)
 - `bot/newspaper.ts` – Weekly Newspaper orchestration (generate → store → post)
+- `bot/boxScore.ts` – `/process-video` orchestration (download → frame extract → vision → store)
 - `bot/ui/` – Discord message/embed + button builders
 - `lib/types/` – Core domain types
 - `lib/supabase/` – Supabase SSR/browser clients + service-role client (`service.ts`)
-- `lib/grok/` – Grok API client scaffolding + Weekly Newspaper generation (`newspaper.ts`)
+- `lib/grok/` – Grok API client scaffolding + Weekly Newspaper generation (`newspaper.ts`) + Box Score vision extraction (`boxScore.ts`)
+- `lib/video/` – ffmpeg-based video frame extraction (`frames.ts`)
 - `components/ui/` – shadcn-style reusable UI components
 - `supabase/` – SQL schema (`schema.sql`) and seed data (`seed.sql`)
 
@@ -88,6 +90,7 @@ The core weekly coordination flow lives in `bot/`:
   - `/unlink <user>` – remove a user's link to their current team (without deleting the team). Restricted to commissioners.
   - `/delete-team <team> [force]` – permanently delete a team. Restricted to commissioners. The `team` option has autocomplete. As a safety check, deletion is refused while a user is still linked unless `force:true` is passed.
   - `/ping` – simple liveness check.
+  - `/process-video <video> [week]` – extract structured game data (v1: a **Box Score**) from a recorded game video. See [Video processing](#video-processing-process-video) below.
 - `bot/store/readyStore.ts` – the `ReadyStore` interface plus the in-memory implementation (`InMemoryReadyStore`) used as a local-dev fallback. `getReadyStore()` selects the Supabase-backed store when credentials are present.
 - `bot/store/supabaseReadyStore.ts` – `SupabaseReadyStore`, the persistent implementation of `ReadyStore` backed by Supabase (`teams`, `week_states`, `team_ready_states`).
 - `lib/supabase/service.ts` – service-role Supabase client used by the bot (server-side only).
@@ -286,6 +289,60 @@ Commissioners can regenerate and re-post at any time with `/newspaper`:
 Each run stores a new row (the latest `generated_at` for a week wins), so it is
 safe to regenerate if you tweak prompts or want a fresh take.
 
+## Video processing (`/process-video`)
+
+Turn a recorded game video (e.g. an Xbox clip) into structured game data. v1
+focuses on the **Box Score** screen.
+
+```text
+/process-video video:<attach an MP4/MOV> week:5
+```
+
+- Attach the recording to the `video` option. `week` is optional and just tags
+  the stored result.
+- The reply is deferred (processing takes a few seconds), then updated with a
+  **Box Score** embed summarizing what was extracted.
+
+### What it extracts
+
+For each team (home and away) the pipeline tries to read:
+
+- **Team name** and **final score**
+- **Quarter-by-quarter scores** (when visible)
+- **Headline team stats** (e.g. total yards, turnovers, passing/rushing yards)
+  when clearly legible
+
+Only values that are actually readable in the frames are recorded — anything the
+model can't see is simply left out rather than guessed.
+
+### How it works
+
+1. **Download** – the attachment is downloaded to a temp file (rejected if it is
+   empty or larger than 100 MB).
+2. **Frame extraction** (`lib/video/frames.ts`) – ffmpeg samples evenly spaced
+   frames (about one every 3 seconds, capped at 8) so vision usage stays bounded.
+3. **Vision** (`lib/grok/boxScore.ts`) – the frames are sent to the Grok vision
+   model with a prompt that asks for a strict Box Score JSON object. Parsing is
+   defensive (strips code fences, coerces types, drops malformed fields).
+4. **Store** (`bot/store/boxScoreStore.ts`) – the result is saved to the
+   `box_scores` table (JSONB `data` plus a few promoted columns) with an
+   in-memory fallback for local development.
+5. **Reply** (`bot/ui/boxScoreMessage.ts`) – a summary embed is posted back.
+
+Orchestration lives in `bot/boxScore.ts`; all temp files are cleaned up even on
+failure, and errors (bad video, vision failure, oversized upload) surface as
+clear ⚠️ messages.
+
+### Configuration
+
+- Set `XAI_API_KEY` (and optionally `XAI_MODEL_VISION`, default
+  `grok-2-vision-latest`) so the bot can call Grok Vision.
+- **ffmpeg / ffprobe** are provided by the `ffmpeg-static` / `ffprobe-static`
+  packages, so no system install is required. To use a system build instead
+  (e.g. on a host that ships its own), set `FFMPEG_PATH` and `FFPROBE_PATH`.
+- Run [`supabase/schema.sql`](supabase/schema.sql) to create the `box_scores`
+  table (idempotent — re-running just adds the new table).
+
 ## Managing teams and links
 
 Commissioners have a few more tools for keeping the roster tidy. All are
@@ -308,3 +365,4 @@ selection where relevant.
 2. ✅ Move ready/week state persistence to Supabase
 3. Screenshot ingestion + OCR extraction pipeline
 4. ✅ AI dynasty newspaper generation and publishing (`/advance` + `/newspaper`)
+5. ✅ Video → Box Score extraction (`/process-video`, ffmpeg + Grok Vision)

@@ -157,3 +157,50 @@ export interface Newspaper {
   model: string;
   generatedAt: string;
 }
+
+/**
+ * A single team's line in an extracted Box Score. Every field beyond `name`
+ * is optional because it depends on what was legible on the screen — the video
+ * pipeline records whatever Grok Vision can read and leaves the rest undefined.
+ */
+export interface BoxScoreTeam {
+  /** Team name as read from the box score screen. */
+  name: string;
+  /** Final score for the team, when legible. */
+  score?: number;
+  /** Quarter-by-quarter points (index 0 = Q1), when visible. */
+  quarterScores?: number[];
+  /**
+   * Free-form team stats keyed by a normalized label (e.g. `totalYards`,
+   * `turnovers`). Values are kept as-is (string or number) so the shape can grow
+   * without migrations.
+   */
+  stats?: Record<string, string | number>;
+}
+
+/**
+ * Structured game data extracted from an uploaded video. v1 focuses on the
+ * Box Score screen (final score, quarter scores, headline team stats).
+ */
+export interface BoxScore {
+  /** Home team line. */
+  home: BoxScoreTeam;
+  /** Away team line. */
+  away: BoxScoreTeam;
+  /** Optional notes/caveats from the vision model (e.g. low-confidence reads). */
+  notes?: string;
+}
+
+/** A persisted Box Score extracted from an uploaded video. */
+export interface BoxScoreRecord {
+  id: Id;
+  dynastyId: Id;
+  /** Week the game belongs to, when the user supplies it. */
+  weekNumber?: number;
+  boxScore: BoxScore;
+  /** Grok vision model used to extract the data. */
+  model: string;
+  /** Original video filename, for reference. */
+  sourceVideo?: string;
+  createdAt: string;
+}
