@@ -11,6 +11,14 @@ import {
   getSupabaseServiceClient,
   hasSupabaseServiceCredentials,
 } from "@/lib/supabase/service";
+import {
+  calculateDeadline,
+  clampWeekIndex,
+  getWeekByIndex,
+  getWeekName,
+  isLastWeekIndex,
+  isValidWeekIndex,
+} from "@/lib/weekSchedule";
 import type {
   AdvanceResult,
   LeagueConfig,
@@ -42,6 +50,16 @@ export interface UpdateTeamInput {
   emoji?: string | null;
 }
 
+/** Options controlling how a week's deadline is (re)calculated. */
+export interface WeekDeadlineOptions {
+  /**
+   * Override the default deadline window (in hours) for the target week. When
+   * omitted, the week's `defaultDurationHours` from the schedule is used (48h for
+   * game weeks, 24h otherwise).
+   */
+  deadlineOverrideHours?: number;
+}
+
 /**
  * Storage contract for the ready-to-advance system.
  *
@@ -52,8 +70,12 @@ export interface UpdateTeamInput {
 export interface ReadyStore {
   /** Current week + phase for the dynasty. */
   getWeekState(): Promise<WeekState>;
-  /** Override the current week (used by `/advance` and admin tooling). */
-  setCurrentWeek(weekNumber: number): Promise<WeekState>;
+  /**
+   * Jump to a specific week by its schedule index (used by `/set-week` and admin
+   * tooling). Recalculates the deadline from the target week's default duration
+   * unless an override is supplied. Throws for an invalid index.
+   */
+  setCurrentWeek(weekNumber: number, options?: WeekDeadlineOptions): Promise<WeekState>;
 
   /** All teams in the dynasty. */
   listTeams(): Promise<Team[]>;
@@ -111,10 +133,12 @@ export interface ReadyStore {
   getReadySummary(): Promise<ReadySummary>;
 
   /**
-   * Advance to the next week when enough teams are ready. Resets readiness for
-   * the new week. Returns whether the advance actually happened.
+   * Advance to the next week in the schedule when enough teams are ready. Resets
+   * readiness for the new week and calculates its deadline (overridable via
+   * `options.deadlineOverrideHours`). Returns whether the advance actually
+   * happened; refuses to advance past the last week of the schedule.
    */
-  advanceWeek(): Promise<AdvanceResult>;
+  advanceWeek(options?: WeekDeadlineOptions): Promise<AdvanceResult>;
 }
 
 /** Seed teams used while everything is in memory (pre-Supabase). */
@@ -184,7 +208,10 @@ function applyTeamLinks(teams: Team[]): void {
 export class InMemoryReadyStore implements ReadyStore {
   private readonly config: LeagueConfig;
   private readonly teams: Team[];
-  private weekState: WeekState;
+  /** Current week as a schedule index (see `lib/weekSchedule.ts`). */
+  private currentWeekIndex: number;
+  /** ISO deadline for the current week, if set. */
+  private deadline?: string;
   /** Keyed by `${weekNumber}:${teamId}`. */
   private readonly readyStates = new Map<string, TeamReadyState>();
 
@@ -192,21 +219,40 @@ export class InMemoryReadyStore implements ReadyStore {
     this.config = config;
     this.teams = seedTeams(config.dynastyId);
     applyTeamLinks(this.teams);
-    this.weekState = {
-      id: `${config.dynastyId}:week`,
-      dynastyId: config.dynastyId,
-      weekNumber: config.startWeek,
+    this.currentWeekIndex = clampWeekIndex(config.startWeek);
+    const startWeek = getWeekByIndex(this.currentWeekIndex);
+    this.deadline = startWeek ? calculateDeadline(startWeek) : undefined;
+  }
+
+  /** Build a full {@link WeekState} from the current index + deadline. */
+  private buildWeekState(): WeekState {
+    const week = getWeekByIndex(this.currentWeekIndex);
+    return {
+      id: `${this.config.dynastyId}:week`,
+      dynastyId: this.config.dynastyId,
+      weekNumber: this.currentWeekIndex,
+      weekName: getWeekName(this.currentWeekIndex),
+      isGameWeek: week?.isGameWeek ?? false,
+      deadline: this.deadline,
       phase: "READY_CHECK",
     };
   }
 
   async getWeekState(): Promise<WeekState> {
-    return { ...this.weekState };
+    return this.buildWeekState();
   }
 
-  async setCurrentWeek(weekNumber: number): Promise<WeekState> {
-    this.weekState = { ...this.weekState, weekNumber, phase: "READY_CHECK" };
-    return { ...this.weekState };
+  async setCurrentWeek(
+    weekNumber: number,
+    options?: WeekDeadlineOptions,
+  ): Promise<WeekState> {
+    if (!isValidWeekIndex(weekNumber)) {
+      throw new Error(`Invalid week: ${weekNumber}`);
+    }
+    const week = getWeekByIndex(weekNumber)!;
+    this.currentWeekIndex = weekNumber;
+    this.deadline = calculateDeadline(week, options?.deadlineOverrideHours);
+    return this.buildWeekState();
   }
 
   async listTeams(): Promise<Team[]> {
@@ -370,18 +416,19 @@ export class InMemoryReadyStore implements ReadyStore {
 
     const readyState: TeamReadyState = {
       teamId,
-      weekNumber: this.weekState.weekNumber,
+      weekNumber: this.currentWeekIndex,
       status,
       updatedByDiscordUserId: discordUserId,
       updatedAt: now,
     };
 
-    this.readyStates.set(this.readyKey(this.weekState.weekNumber, teamId), readyState);
+    this.readyStates.set(this.readyKey(this.currentWeekIndex, teamId), readyState);
     return { ...readyState };
   }
 
   async getReadySummary(): Promise<ReadySummary> {
-    const weekNumber = this.weekState.weekNumber;
+    const weekState = this.buildWeekState();
+    const weekNumber = weekState.weekNumber;
 
     const entries: ReadySummaryEntry[] = this.teams.map((team) => {
       const readyState = this.readyStates.get(this.readyKey(weekNumber, team.id));
@@ -398,9 +445,12 @@ export class InMemoryReadyStore implements ReadyStore {
     const requiredCount = this.config.advanceThreshold ?? totalCount;
 
     return {
-      dynastyId: this.weekState.dynastyId,
+      dynastyId: weekState.dynastyId,
       weekNumber,
-      phase: this.weekState.phase,
+      weekName: weekState.weekName,
+      isGameWeek: weekState.isGameWeek,
+      deadline: weekState.deadline,
+      phase: weekState.phase,
       entries,
       readyCount,
       totalCount,
@@ -409,12 +459,34 @@ export class InMemoryReadyStore implements ReadyStore {
     };
   }
 
-  async advanceWeek(): Promise<AdvanceResult> {
+  async advanceWeek(options?: WeekDeadlineOptions): Promise<AdvanceResult> {
     const summary = await this.getReadySummary();
-    const previousWeek = this.weekState.weekNumber;
+    const previousWeek = this.currentWeekIndex;
+    const previousWeekName = getWeekName(previousWeek);
+
+    // Refuse to advance past the last week of the schedule.
+    if (isLastWeekIndex(previousWeek)) {
+      return {
+        advanced: false,
+        previousWeek,
+        currentWeek: previousWeek,
+        previousWeekName,
+        currentWeekName: previousWeekName,
+        atLastWeek: true,
+        summary,
+      };
+    }
 
     if (!summary.canAdvance) {
-      return { advanced: false, previousWeek, currentWeek: previousWeek, summary };
+      return {
+        advanced: false,
+        previousWeek,
+        currentWeek: previousWeek,
+        previousWeekName,
+        currentWeekName: previousWeekName,
+        atLastWeek: false,
+        summary,
+      };
     }
 
     // Move to the next week and reset readiness so the new week starts clean.
@@ -423,13 +495,17 @@ export class InMemoryReadyStore implements ReadyStore {
       team.readyStatus = "NOT_READY";
       team.updatedAt = new Date().toISOString();
     }
-    this.weekState = { ...this.weekState, weekNumber: nextWeek, phase: "READY_CHECK" };
+    const nextState = await this.setCurrentWeek(nextWeek, options);
 
     const nextSummary = await this.getReadySummary();
     return {
       advanced: true,
       previousWeek,
       currentWeek: nextWeek,
+      previousWeekName,
+      currentWeekName: nextState.weekName,
+      deadline: nextState.deadline,
+      atLastWeek: false,
       summary: nextSummary,
     };
   }

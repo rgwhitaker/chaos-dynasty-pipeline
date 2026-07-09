@@ -23,7 +23,7 @@ It combines:
 - `bot/start.ts` – bot startup entry point (config validation, login, graceful shutdown)
 - `bot/client.ts` – Discord client factory, command registration, gateway lifecycle logging
 - `bot/config.ts` / `bot/logger.ts` – env configuration/validation and structured logging
-- `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/newspaper`, `/register`, `/set-ready`, `/set-emoji`, `/edit-team`, `/unlink`, `/delete-team`, `/ping`, `/process-video`)
+- `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/set-week`, `/newspaper`, `/register`, `/set-ready`, `/set-emoji`, `/edit-team`, `/unlink`, `/delete-team`, `/ping`, `/process-video`)
 - `bot/store/` – ready-to-advance state store + weekly newspaper store + box score store (Supabase-backed, with an in-memory fallback)
 - `bot/newspaper.ts` – Weekly Newspaper orchestration (generate → store → post)
 - `bot/boxScore.ts` – `/process-video` orchestration (download → frame extract → vision → store)
@@ -81,7 +81,8 @@ The core weekly coordination flow lives in `bot/`:
 - `bot/commands/` – slash commands built with `SlashCommandBuilder`:
   - `/ready [ready:true|false]` – mark **your** team ready (or not ready) for the current week. Only users linked to a team may use it.
   - `/status` – show the current week and which teams are ready / not ready.
-  - `/advance` – advance to the next week when enough teams are ready. Restricted to commissioners (configured role or Manage Server permission). After a successful advance, the bot automatically generates and posts a **Weekly Newspaper** for the week that just ended (see below).
+  - `/advance [deadline_hours]` – advance to the next week in the [season schedule](#season-schedule--deadlines) when enough teams are ready. Restricted to commissioners (configured role or Manage Server permission). Automatically calculates the new week's deadline (48h for game weeks, 24h otherwise); pass `deadline_hours` to override it. Posts a public announcement of the new week and deadline, then generates and posts a **Weekly Newspaper** for the week that just ended (see below).
+  - `/set-week <week> [deadline_hours]` – jump the dynasty to any week in the schedule (e.g. skip ahead to `Bowl Week 1` or reset to `Preseason`). Restricted to commissioners. The `week` option has autocomplete over the full schedule; the deadline is recalculated from the target week's default duration unless `deadline_hours` overrides it.
   - `/newspaper [week]` – manually (re)generate and post the Weekly Newspaper. Restricted to commissioners. Defaults to the most recently completed week; pass `week` to target the current or any specific week.
   - `/register <user> <team>` – link a Discord user to a team, creating the team if it doesn't exist yet. Restricted to commissioners (same permission rule as `/advance`). The `team` option has autocomplete that searches existing teams by name or abbreviation.
   - `/set-ready <user> <ready>` – set another user's team ready status for the current week, even if they never marked ready themselves. Restricted to commissioners (same permission rule as `/advance`). Returns a clear error if the target user isn't linked to a team, and shows an updated ready summary.
@@ -92,7 +93,8 @@ The core weekly coordination flow lives in `bot/`:
   - `/ping` – simple liveness check.
   - `/process-video <video> [week]` – extract structured game data (v1: a **Box Score**) from a recorded game video. See [Video processing](#video-processing-process-video) below.
 - `bot/store/readyStore.ts` – the `ReadyStore` interface plus the in-memory implementation (`InMemoryReadyStore`) used as a local-dev fallback. `getReadyStore()` selects the Supabase-backed store when credentials are present.
-- `bot/store/supabaseReadyStore.ts` – `SupabaseReadyStore`, the persistent implementation of `ReadyStore` backed by Supabase (`teams`, `week_states`, `team_ready_states`).
+- `bot/store/supabaseReadyStore.ts` – `SupabaseReadyStore`, the persistent implementation of `ReadyStore` backed by Supabase (`teams`, `dynasty_state`, `team_ready_states`).
+- `lib/weekSchedule.ts` – the full ordered [season schedule](#season-schedule--deadlines) (week names + `isGameWeek` / `defaultDurationHours` metadata) plus deadline-calculation helpers shared by the store and commands.
 - `lib/supabase/service.ts` – service-role Supabase client used by the bot (server-side only).
 - `bot/ui/readyMessage.ts` – builds the status embed and the **Mark Ready / Mark Not Ready / Refresh** buttons.
 - `bot/config.ts` – reads league configuration from the environment.
@@ -103,7 +105,7 @@ The core weekly coordination flow lives in `bot/`:
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL (enables persistence) | none |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key used by the bot (server-side only) | none |
-| `LEAGUE_START_WEEK` | Week the league starts on | `1` |
+| `LEAGUE_START_WEEK` | Schedule index a fresh dynasty starts on (0 = Preseason) | `0` |
 | `LEAGUE_ADVANCE_THRESHOLD` | Ready teams required to advance, or `ALL` | `ALL` |
 | `LEAGUE_DYNASTY_ID` | Dynasty id the bot coordinates | `default` |
 | `DISCORD_COMMISSIONER_ROLE_ID` | Role allowed to run `/advance` | Manage Server permission |
@@ -117,6 +119,63 @@ When `NEXT_PUBLIC_SUPABASE_URL` **and** `SUPABASE_SERVICE_ROLE_KEY` are set,
 `getReadyStore()` uses the persistent `SupabaseReadyStore`. Otherwise it falls
 back to the in-memory store (state resets on restart) so local development works
 with no external dependencies.
+
+### Season schedule & deadlines
+
+The dynasty runs on a fixed, ordered **season schedule** defined in
+[`lib/weekSchedule.ts`](lib/weekSchedule.ts). Each week carries metadata used to
+drive deadlines:
+
+- `is_game_week` (`isGameWeek` in code) – `true` for weeks where games are played.
+- `default_duration_hours` (`defaultDurationHours` in code) – the default deadline
+  window: **48h** for game weeks, **24h** for non-game weeks.
+
+The full schedule, in order, is:
+
+| # | Week | Game week? | Default deadline |
+| --- | --- | --- | --- |
+| 0 | Preseason | no | 24h |
+| 1–16 | Week 0 … Week 15 | yes | 48h |
+| 17 | Conference Championships | yes | 48h |
+| 18–20 | Bowl Week 1 … Bowl Week 3 | yes | 48h |
+| 21 | National Championship | yes | 48h |
+| 22 | End of Season Recap | no | 24h |
+| 23 | Players Leaving | no | 24h |
+| 24–27 | Offseason Recruiting Week 1 … 4 | no | 24h |
+| 28 | National Signing Day | no | 24h |
+| 29 | Training Results | no | 24h |
+| 30 | Offseason | no | 24h |
+
+The **current week and its deadline** are stored per dynasty in the
+`dynasty_state` table (Supabase) or in memory for local dev. A week's position in
+the schedule (its 0-based index above) is the stable identifier used for
+readiness, so changing weeks automatically starts every team as NOT ready.
+
+**Deadline calculation & overrides**
+
+- On `/advance`, the bot looks at the **next** week and sets its deadline to
+  `now + default_duration_hours` (48h if the next week is a game week, otherwise
+  24h). Pass `deadline_hours:<n>` to override — e.g. `/advance deadline_hours:24`
+  forces a 24h window even on a game week.
+- `/set-week week:<name>` jumps straight to any week and recalculates its deadline
+  from that week's default duration; `deadline_hours:<n>` overrides it the same
+  way.
+- The new week and its deadline are announced publicly in the channel. Deadlines
+  render as native Discord timestamps, so every member sees them in their own
+  timezone with a relative "in N hours" hint.
+- `/status`, `/ready`, and `/set-ready` all show the current week name and its
+  deadline in the ready-check embed.
+
+**Validation**
+
+- `/advance` refuses to move past the last week of the schedule (Offseason) and
+  explains that there is nowhere left to advance to.
+- `/set-week` rejects any week name that isn't in the schedule (use the
+  autocomplete suggestions to pick a valid week).
+
+> `LEAGUE_START_WEEK` is interpreted as a 0-based index into this schedule and
+> defaults to `0` (Preseason). It only sets the week a **fresh** dynasty starts
+> on; after that, the current week is persisted.
 
 ### Supabase setup
 
@@ -134,13 +193,13 @@ with no external dependencies.
 
 2. Create the tables. In the Supabase dashboard open **SQL Editor**, paste the
    contents of [`supabase/schema.sql`](supabase/schema.sql), and run it. This
-   creates `teams`, `week_states`, `team_ready_states`, and `newspapers` (with
-   RLS enabled).
+   creates `teams`, `dynasty_state`, `week_states`, `team_ready_states`, and
+   `newspapers` (with RLS enabled).
 
 3. Seed initial teams by running [`supabase/seed.sql`](supabase/seed.sql) the
-   same way. It inserts four starter teams and opens Week 1. To link a Discord
-   account to a team, set that team's `discord_user_id` (enable Developer Mode →
-   right-click a user → **Copy User ID**), e.g.:
+   same way. It inserts starter teams and opens the dynasty on Preseason. To link
+   a Discord account to a team, set that team's `discord_user_id` (enable
+   Developer Mode → right-click a user → **Copy User ID**), e.g.:
 
    ```sql
    update public.teams set discord_user_id = 'YOUR_USER_ID' where id = 'team-thunder';
@@ -176,9 +235,9 @@ The seed provides four demo teams: `team-thunder`, `team-reign`, `team-blitz`, `
    ```
 
 5. In your server, try the flow:
-   - `/status` – see Week 1 with all teams NOT ready.
+   - `/status` – see the current week (Preseason on a fresh dynasty) with all teams NOT ready.
    - `/ready` – mark your team ready; the status message updates. Or click the **Mark Ready** button.
-   - `/advance` – as a commissioner, advance the week once the threshold is met. Ready statuses reset for the new week.
+   - `/advance` – as a commissioner, advance the week once the threshold is met. Ready statuses reset for the new week and its deadline is announced.
 
 > With Supabase configured, state persists across restarts. Without it, the
 > in-memory fallback resets when the dev server restarts.
@@ -363,6 +422,8 @@ selection where relevant.
 
 1. ✅ Interactive ready-status command flow (in-memory)
 2. ✅ Move ready/week state persistence to Supabase
-3. Screenshot ingestion + OCR extraction pipeline
-4. ✅ AI dynasty newspaper generation and publishing (`/advance` + `/newspaper`)
-5. ✅ Video → Box Score extraction (`/process-video`, ffmpeg + Grok Vision)
+3. ✅ Full custom season schedule + commissioner deadline controls (`/advance` overrides, `/set-week`)
+4. Screenshot ingestion + OCR extraction pipeline
+5. ✅ AI dynasty newspaper generation and publishing (`/advance` + `/newspaper`)
+6. ✅ Video → Box Score extraction (`/process-video`, ffmpeg + Grok Vision)
+7. Recurring deadline reminders + a persistent status dashboard (Phase 2)

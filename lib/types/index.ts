@@ -33,7 +33,18 @@ export type WeekPhase = "DATA_COLLECTION" | "READY_CHECK" | "ADVANCING" | "COMPL
 export interface WeekState {
   id: Id;
   dynastyId: Id;
+  /**
+   * Stable integer identifier for the current week — its 0-based position in the
+   * dynasty schedule (see `lib/weekSchedule.ts`). Kept named `weekNumber` for
+   * backwards compatibility with the readiness/newspaper keying.
+   */
   weekNumber: number;
+  /** Human-readable name of the current week (e.g. "Week 5", "Bowl Week 1"). */
+  weekName: string;
+  /** Whether the current week is a game week. */
+  isGameWeek: boolean;
+  /** ISO timestamp for when the current week's deadline elapses, if set. */
+  deadline?: string;
   phase: WeekPhase;
   advanceRequestedAt?: string;
   advancedAt?: string;
@@ -81,6 +92,12 @@ export interface ReadySummaryEntry {
 export interface ReadySummary {
   dynastyId: Id;
   weekNumber: number;
+  /** Human-readable name of the current week (e.g. "Week 5", "Bowl Week 1"). */
+  weekName: string;
+  /** Whether the current week is a game week. */
+  isGameWeek: boolean;
+  /** ISO timestamp for the current week's deadline, if set. */
+  deadline?: string;
   phase: WeekPhase;
   entries: ReadySummaryEntry[];
   readyCount: number;
@@ -95,6 +112,17 @@ export interface AdvanceResult {
   advanced: boolean;
   previousWeek: number;
   currentWeek: number;
+  /** Human-readable name of the week that was current before advancing. */
+  previousWeekName: string;
+  /** Human-readable name of the week that is now current. */
+  currentWeekName: string;
+  /** ISO deadline set for the new current week (present when advanced). */
+  deadline?: string;
+  /**
+   * True when the advance was refused because the dynasty is already on the last
+   * week of the schedule (there is nowhere left to advance to).
+   */
+  atLastWeek: boolean;
   summary: ReadySummary;
 }
 

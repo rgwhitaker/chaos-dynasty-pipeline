@@ -6,9 +6,14 @@ import type { LeagueConfig } from "@/lib/types";
  */
 export const DEFAULT_DYNASTY_ID = "default";
 
+/**
+ * Parse the configured start week. The value is interpreted as a 0-based index
+ * into the dynasty schedule (see `lib/weekSchedule.ts`), so `0` is the first week
+ * (Preseason). Non-numeric/negative input falls back to the schedule start.
+ */
 function parseWeek(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value ?? "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 /**
@@ -32,7 +37,7 @@ function parseThreshold(value: string | undefined): number | null {
 export function getLeagueConfig(): LeagueConfig {
   return {
     dynastyId: process.env.LEAGUE_DYNASTY_ID?.trim() || DEFAULT_DYNASTY_ID,
-    startWeek: parseWeek(process.env.LEAGUE_START_WEEK, 1),
+    startWeek: parseWeek(process.env.LEAGUE_START_WEEK, 0),
     advanceThreshold: parseThreshold(process.env.LEAGUE_ADVANCE_THRESHOLD),
     commissionerRoleId: process.env.DISCORD_COMMISSIONER_ROLE_ID?.trim() || undefined,
   };

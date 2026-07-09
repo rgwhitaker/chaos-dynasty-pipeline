@@ -5,16 +5,32 @@ import { getLeagueConfig } from "@/bot/config";
 import { generateAndPostNewspaper } from "@/bot/newspaper";
 import { isCommissioner } from "@/bot/permissions";
 import { getReadyStore } from "@/bot/store/readyStore";
-import { buildReadyStatusMessage } from "@/bot/ui/readyMessage";
+import { buildReadyStatusMessage, formatDeadline } from "@/bot/ui/readyMessage";
+
+/** Bounds for the optional deadline override (in hours). */
+const MIN_DEADLINE_HOURS = 1;
+const MAX_DEADLINE_HOURS = 720; // 30 days
 
 /**
  * `/advance` — advance the league to the next week once enough teams are ready.
  * Restricted to commissioners (configured role or Manage Server permission).
+ *
+ * An optional `deadline_hours` overrides the automatically-calculated deadline
+ * window for the new week (e.g. force 24h even on a 48h game week).
  */
 export const advanceCommand: BotCommand = {
   data: new SlashCommandBuilder()
     .setName("advance")
-    .setDescription("Advance the league to the next week (commissioners only)."),
+    .setDescription("Advance the league to the next week (commissioners only).")
+    .addIntegerOption((option) =>
+      option
+        .setName("deadline_hours")
+        .setDescription(
+          "Override the new week's deadline window, in hours (default: 48 game weeks / 24 otherwise).",
+        )
+        .setMinValue(MIN_DEADLINE_HOURS)
+        .setMaxValue(MAX_DEADLINE_HOURS),
+    ),
 
   async execute(interaction: ChatInputCommandInteraction) {
     const config = getLeagueConfig();
@@ -28,20 +44,38 @@ export const advanceCommand: BotCommand = {
       return;
     }
 
+    const deadlineOverrideHours =
+      interaction.options.getInteger("deadline_hours") ?? undefined;
+
     // Defer the public reply so advancing (which touches the store) stays within
     // Discord's response window.
     await interaction.deferReply();
 
     try {
       const store = getReadyStore();
-      const result = await store.advanceWeek();
+      const result = await store.advanceWeek(
+        deadlineOverrideHours ? { deadlineOverrideHours } : undefined,
+      );
 
       if (!result.advanced) {
+        // Already at the end of the schedule — there is nowhere left to go.
+        if (result.atLastWeek) {
+          const message = await buildReadyStatusMessage(result.summary);
+          await interaction.editReply({
+            content:
+              `**${result.previousWeekName}** is the final week of the season — ` +
+              "there is nothing left to advance to. Use `/set-week` to jump to " +
+              "another week if you need to reset the schedule.",
+            ...message,
+          });
+          return;
+        }
+
         const { summary } = result;
         const message = await buildReadyStatusMessage(summary);
         await interaction.editReply({
           content:
-            `Not enough teams are ready to advance Week ${summary.weekNumber} ` +
+            `Not enough teams are ready to advance ${summary.weekName} ` +
             `(${summary.readyCount}/${summary.requiredCount}).`,
           ...message,
         });
@@ -49,17 +83,23 @@ export const advanceCommand: BotCommand = {
       }
 
       const message = await buildReadyStatusMessage(result.summary);
+      const deadline = formatDeadline(result.deadline);
+      const deadlineLine = deadline
+        ? `\n🗓️ Deadline: ${deadline}`
+        : "";
+
+      // Public announcement of the new week + deadline for the whole channel.
       await interaction.editReply({
         content:
-          `Advanced from Week ${result.previousWeek} to **Week ${result.currentWeek}**! ` +
-          "Ready statuses have been reset.",
+          `📢 The dynasty has advanced from **${result.previousWeekName}** to ` +
+          `**${result.currentWeekName}**! Ready statuses have been reset.${deadlineLine}`,
         ...message,
       });
 
       // Generate and post the Weekly Newspaper for the week that just ended.
       // This runs after the advance reply so a slow Grok call (or a newspaper
       // failure) never blocks or breaks the core advance flow.
-      await publishWeeklyNewspaper(interaction, result.previousWeek);
+      await publishWeeklyNewspaper(interaction, result.previousWeek, result.previousWeekName);
     } catch (error) {
       console.error("[advance] Failed to advance the week", error);
       await interaction.editReply({
@@ -77,12 +117,13 @@ export const advanceCommand: BotCommand = {
 async function publishWeeklyNewspaper(
   interaction: ChatInputCommandInteraction,
   weekNumber: number,
+  weekName: string,
 ): Promise<void> {
   try {
     const result = await generateAndPostNewspaper(interaction.client, weekNumber);
     const note = result.posted
-      ? `📰 Weekly Newspaper for Week ${weekNumber} posted to <#${result.channelId}>.`
-      : `📰 Weekly Newspaper for Week ${weekNumber} generated, but not posted ` +
+      ? `📰 Weekly Newspaper for ${weekName} posted to <#${result.channelId}>.`
+      : `📰 Weekly Newspaper for ${weekName} generated, but not posted ` +
         "(set `NEWSPAPER_CHANNEL_ID` to enable posting).";
     await interaction.followUp({ content: note, ephemeral: true });
   } catch (error) {
@@ -90,7 +131,7 @@ async function publishWeeklyNewspaper(
     try {
       await interaction.followUp({
         content:
-          `Week ${weekNumber} advanced, but I couldn't generate the Weekly ` +
+          `${weekName} advanced, but I couldn't generate the Weekly ` +
           "Newspaper. You can retry with `/newspaper`.",
         ephemeral: true,
       });

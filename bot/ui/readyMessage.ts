@@ -17,6 +17,23 @@ const READY_EMOJI = "✅";
 const NOT_READY_EMOJI = "⛔";
 
 /**
+ * Format an ISO deadline as a Discord timestamp so every viewer sees it in their
+ * own timezone, with a relative "in N hours" hint. Returns `undefined` when
+ * there is no deadline to show.
+ */
+export function formatDeadline(deadline?: string): string | undefined {
+  if (!deadline) {
+    return undefined;
+  }
+  const parsed = Date.parse(deadline);
+  if (Number.isNaN(parsed)) {
+    return undefined;
+  }
+  const unix = Math.floor(parsed / 1000);
+  return `<t:${unix}:F> (<t:${unix}:R>)`;
+}
+
+/**
  * Build the human-readable body describing every team's readiness for the
  * current week. Kept separate from the embed so it can be reused in plain-text
  * contexts (logs, tests) if needed.
@@ -54,7 +71,7 @@ export async function buildReadyStatusMessage(
       : "");
 
   const embed: EmbedBuilder = new EmbedBuilder()
-    .setTitle(`Week ${summary.weekNumber} — Ready Check`)
+    .setTitle(`${summary.weekName} — Ready Check`)
     .setDescription(formatReadyLines(summary))
     .addFields({ name: "Progress", value: progress, inline: true })
     .setColor(summary.canAdvance ? 0x2ecc71 : 0xe67e22)
@@ -64,6 +81,12 @@ export async function buildReadyStatusMessage(
         : "Waiting on more teams to mark ready.",
     })
     .setTimestamp(new Date());
+
+  // Surface the current week's deadline when one is set.
+  const deadline = formatDeadline(summary.deadline);
+  if (deadline) {
+    embed.addFields({ name: "Deadline", value: deadline, inline: true });
+  }
 
   const row: ActionRowBuilder<ButtonBuilder> = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()

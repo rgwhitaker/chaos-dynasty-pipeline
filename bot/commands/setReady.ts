@@ -81,7 +81,7 @@ export const setReadyCommand: BotCommand = {
       const verb = wantsReady ? "ready" : "not ready";
       await interaction.editReply({
         content:
-          `**${team.name}** (${targetUser}) is now marked **${verb}** for Week ${summary.weekNumber}.`,
+          `**${team.name}** (${targetUser}) is now marked **${verb}** for ${summary.weekName}.`,
         ...message,
       });
     } catch (error) {

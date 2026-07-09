@@ -10,6 +10,7 @@ import { readyCommand } from "@/bot/commands/ready";
 import { registerCommand } from "@/bot/commands/register";
 import { setEmojiCommand } from "@/bot/commands/setEmoji";
 import { setReadyCommand } from "@/bot/commands/setReady";
+import { setWeekCommand } from "@/bot/commands/setWeek";
 import { statusCommand } from "@/bot/commands/status";
 import { unlinkCommand } from "@/bot/commands/unlink";
 import { getReadyStore } from "@/bot/store/readyStore";
@@ -20,6 +21,7 @@ export const commands: BotCommand[] = [
   readyCommand,
   statusCommand,
   advanceCommand,
+  setWeekCommand,
   newspaperCommand,
   registerCommand,
   setReadyCommand,

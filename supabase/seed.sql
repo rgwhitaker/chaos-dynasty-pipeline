@@ -21,7 +21,8 @@ on conflict (id) do update set
   name         = excluded.name,
   abbreviation = excluded.abbreviation;
 
--- Open Week 1 for the dynasty (the store also creates this lazily if missing).
-insert into public.week_states (dynasty_id, week, status)
-values ('default', 1, 'READY_CHECK')
-on conflict (dynasty_id, week) do nothing;
+-- Point the dynasty at its opening week (0 = Preseason in the schedule). The
+-- store also creates this row lazily if missing.
+insert into public.dynasty_state (dynasty_id, current_week)
+values ('default', 0)
+on conflict (dynasty_id) do nothing;

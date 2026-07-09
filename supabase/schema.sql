@@ -5,8 +5,14 @@
 --
 -- Design notes:
 --  * `teams`             — one row per team in a dynasty.
---  * `week_states`       — one row per (dynasty, week); the row with the highest
---                          week for a dynasty is the "current" week.
+--  * `dynasty_state`     — one row per dynasty holding the *current* week (a
+--                          0-based index into the schedule in `lib/weekSchedule.ts`)
+--                          and its deadline. This is the single source of truth for
+--                          "what week is it now?", so `/set-week` can jump backwards
+--                          or forwards freely.
+--  * `week_states`       — legacy per-(dynasty, week) status history. Retained for
+--                          backwards compatibility; the current week now lives in
+--                          `dynasty_state`.
 --  * `team_ready_states` — one row per (week, team); a missing row means the
 --                          team is NOT ready, so advancing to a new week starts
 --                          everyone as not-ready automatically.
@@ -28,6 +34,8 @@ alter table public.teams add column if not exists emoji text;
 create index if not exists teams_dynasty_id_idx on public.teams (dynasty_id);
 
 -- Week state ------------------------------------------------------------------
+-- Legacy per-(dynasty, week) status history. The *current* week now lives in
+-- `dynasty_state` (below); this table is retained for backwards compatibility.
 create table if not exists public.week_states (
   dynasty_id text not null default 'default',
   week       integer not null,
@@ -35,6 +43,17 @@ create table if not exists public.week_states (
     check (status in ('DATA_COLLECTION', 'READY_CHECK', 'ADVANCING', 'COMPLETE')),
   updated_at timestamptz not null default now(),
   primary key (dynasty_id, week)
+);
+
+-- Dynasty state ---------------------------------------------------------------
+-- One row per dynasty pointing at the current week (a 0-based index into the
+-- schedule in `lib/weekSchedule.ts`) and its deadline. Using an explicit pointer
+-- (instead of "max week") lets `/set-week` jump to any week, forwards or back.
+create table if not exists public.dynasty_state (
+  dynasty_id   text primary key default 'default',
+  current_week integer not null default 0,
+  deadline     timestamptz,
+  updated_at   timestamptz not null default now()
 );
 
 -- Per-team readiness ----------------------------------------------------------
@@ -97,6 +116,7 @@ create index if not exists box_scores_dynasty_week_idx
 -- anon/authenticated clients used by the web app.
 alter table public.teams enable row level security;
 alter table public.week_states enable row level security;
+alter table public.dynasty_state enable row level security;
 alter table public.team_ready_states enable row level security;
 alter table public.newspapers enable row level security;
 alter table public.box_scores enable row level security;
