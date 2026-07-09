@@ -506,8 +506,7 @@ export class SupabaseReadyStore implements ReadyStore {
     await this.clearReadyStates(nextWeek);
 
     // Point the dynasty at the next week and calculate its deadline. Readiness
-    // for the new week starts empty (no rows) so every team is implicitly
-    // NOT_READY.
+    // for the new week was cleared above, so every team starts NOT_READY.
     const nextState = await this.setCurrentWeek(nextWeek, options);
 
     const nextSummary = await this.getReadySummary();
