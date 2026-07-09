@@ -5,6 +5,7 @@ import { getLeagueConfig } from "@/bot/config";
 import { isCommissioner } from "@/bot/permissions";
 import { updateStatusDashboard } from "@/bot/statusDashboard";
 import { getReadyStore } from "@/bot/store/readyStore";
+import { MS_PER_HOUR } from "@/bot/time";
 import { buildReadyStatusMessage, formatDeadline } from "@/bot/ui/readyMessage";
 
 /** Bounds for the optional deadline override (in hours). */
@@ -136,7 +137,7 @@ function formatNextAdvanceLine(deadline?: string): string {
     return "";
   }
 
-  const hours = Math.round((parsed - Date.now()) / 3_600_000);
+  const hours = Math.round((parsed - Date.now()) / MS_PER_HOUR);
   if (hours <= 0) {
     return "";
   }

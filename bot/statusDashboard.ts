@@ -1,4 +1,5 @@
 import type { Client } from "discord.js";
+import { fetchSendableTextChannel } from "@/bot/channels";
 import { getStatusChannelId } from "@/bot/config";
 import { logBot, logError, logWarn } from "@/bot/logger";
 import { getBotStateStore } from "@/bot/store/botStateStore";
@@ -29,8 +30,8 @@ export async function updateStatusDashboard(client: Client): Promise<void> {
     const summary = await readyStore.getReadySummary();
     const message = await buildStatusDashboardMessage(summary);
 
-    const channel = await client.channels.fetch(channelId);
-    if (!channel || !channel.isTextBased() || !("send" in channel)) {
+    const channel = await fetchSendableTextChannel(client, channelId);
+    if (!channel) {
       logWarn(
         `STATUS_CHANNEL_ID (${channelId}) is not a text channel the bot can post to.`,
       );

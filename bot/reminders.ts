@@ -1,4 +1,5 @@
 import type { Client } from "discord.js";
+import { fetchSendableTextChannel } from "@/bot/channels";
 import { getStatusChannelId } from "@/bot/config";
 import { logBot, logError, logWarn } from "@/bot/logger";
 import { getReadyStore } from "@/bot/store/readyStore";
@@ -38,8 +39,8 @@ export async function sendNotReadyReminder(client: Client): Promise<number> {
       return 0;
     }
 
-    const channel = await client.channels.fetch(channelId);
-    if (!channel || !channel.isTextBased() || !("send" in channel)) {
+    const channel = await fetchSendableTextChannel(client, channelId);
+    if (!channel) {
       logWarn(
         `STATUS_CHANNEL_ID (${channelId}) is not a text channel the bot can post to.`,
       );

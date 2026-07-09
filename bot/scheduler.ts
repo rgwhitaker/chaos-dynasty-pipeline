@@ -3,16 +3,17 @@ import { logBot, logError } from "@/bot/logger";
 import { sendNotReadyReminder } from "@/bot/reminders";
 import { updateStatusDashboard } from "@/bot/statusDashboard";
 import { getBotStateStore } from "@/bot/store/botStateStore";
+import { MS_PER_HOUR, MS_PER_MINUTE } from "@/bot/time";
 
 /** How often not-ready users are reminded. */
-export const REMINDER_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 hours
+export const REMINDER_INTERVAL_MS = 12 * MS_PER_HOUR; // 12 hours
 
 /**
  * How often the scheduler wakes up to check whether a reminder is due. A short
  * tick (relative to the 12h cadence) keeps the reminder roughly on-time even
  * when the bot restarts, without busy-looping.
  */
-export const SCHEDULER_TICK_MS = 30 * 60 * 1000; // 30 minutes
+export const SCHEDULER_TICK_MS = 30 * MS_PER_MINUTE; // 30 minutes
 
 const globalForScheduler = globalThis as typeof globalThis & {
   reminderSchedulerStarted?: boolean;
@@ -65,8 +66,8 @@ export function startScheduler(client: Client): void {
   globalForScheduler.reminderSchedulerStarted = true;
 
   logBot(
-    `Starting reminder scheduler (every ${REMINDER_INTERVAL_MS / 3_600_000}h, ` +
-      `checked every ${SCHEDULER_TICK_MS / 60_000}m).`,
+    `Starting reminder scheduler (every ${REMINDER_INTERVAL_MS / MS_PER_HOUR}h, ` +
+      `checked every ${SCHEDULER_TICK_MS / MS_PER_MINUTE}m).`,
   );
 
   // Ensure the dashboard exists/refreshes on boot (e.g. after a restart), then
