@@ -1,6 +1,15 @@
-import type { EmbedBuilder, MessageCreateOptions } from "discord.js";
+import type {
+  ActionRowBuilder,
+  ButtonBuilder,
+  EmbedBuilder,
+  MessageCreateOptions,
+} from "discord.js";
 import type { ReadySummary } from "@/lib/types";
-import { formatDeadline } from "@/bot/ui/readyMessage";
+import {
+  buildReadyButtonRow,
+  DASHBOARD_BUTTON_IDS,
+  formatDeadline,
+} from "@/bot/ui/readyMessage";
 
 const READY_EMOJI = "✅";
 const NOT_READY_EMOJI = "⛔";
@@ -32,9 +41,11 @@ function formatTeamList(
 
 /**
  * Build the persistent status-dashboard message shown in the configured
- * `STATUS_CHANNEL_ID` channel. Unlike `/status`, this is a plain display (no
- * buttons) so it can be safely edited in place from background jobs without
- * clashing with interactive command flows.
+ * `STATUS_CHANNEL_ID` channel. It mirrors `/status` but with a two-column
+ * ready/not-ready layout, and carries the same **Mark Ready / Mark Not Ready /
+ * Refresh** buttons so members can act on it directly. The buttons use a
+ * dashboard-specific id namespace ({@link DASHBOARD_BUTTON_IDS}) so the shared
+ * handler re-renders this layout (not the `/status` one) when they are clicked.
  *
  * The deadline renders as a native Discord timestamp, so "time remaining"
  * updates on its own in every viewer's client without the bot re-editing the
@@ -42,7 +53,7 @@ function formatTeamList(
  */
 export async function buildStatusDashboardMessage(
   summary: ReadySummary,
-): Promise<Pick<MessageCreateOptions, "embeds" | "content">> {
+): Promise<Pick<MessageCreateOptions, "embeds" | "content" | "components">> {
   const { EmbedBuilder } = await import(/* webpackIgnore: true */ "discord.js");
 
   const readyEntries = summary.entries.filter((entry) => entry.status === "READY");
@@ -79,9 +90,13 @@ export async function buildStatusDashboardMessage(
     .setFooter({
       text: summary.canAdvance
         ? "Enough teams are ready — a commissioner can run /advance."
-        : "Waiting on more teams to mark ready. Use /ready to check in.",
+        : "Waiting on more teams to mark ready. Use the buttons below to check in.",
     })
     .setTimestamp(new Date());
 
-  return { embeds: [embed] };
+  const row: ActionRowBuilder<ButtonBuilder> = await buildReadyButtonRow(
+    DASHBOARD_BUTTON_IDS,
+  );
+
+  return { embeds: [embed], components: [row] };
 }

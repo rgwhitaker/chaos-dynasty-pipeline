@@ -13,6 +13,25 @@ export const READY_BUTTON_IDS = {
   refresh: "ready:refresh",
 } as const;
 
+/**
+ * Custom ids for the buttons shown on the persistent status dashboard message.
+ * They are distinct from {@link READY_BUTTON_IDS} so the shared button handler
+ * can tell which message it is editing (the ephemeral `/status` reply vs. the
+ * single shared dashboard message) and re-render it with the matching layout.
+ */
+export const DASHBOARD_BUTTON_IDS = {
+  markReady: "status-dashboard:mark",
+  markNotReady: "status-dashboard:unmark",
+  refresh: "status-dashboard:refresh",
+} as const;
+
+/** The shape of a set of ready-button custom ids (mark / unmark / refresh). */
+export type ReadyButtonIds = {
+  markReady: string;
+  markNotReady: string;
+  refresh: string;
+};
+
 const READY_EMOJI = "✅";
 const NOT_READY_EMOJI = "⛔";
 
@@ -54,6 +73,37 @@ export function formatReadyLines(summary: ReadySummary): string {
 }
 
 /**
+ * Build the shared Mark Ready / Mark Not Ready / Refresh button row. The custom
+ * ids are passed in so the same layout can back both the `/status` reply and the
+ * persistent status dashboard while remaining individually addressable by the
+ * button handler. discord.js runtime classes are imported dynamically to match
+ * the rest of the UI modules.
+ */
+export async function buildReadyButtonRow(
+  ids: ReadyButtonIds,
+): Promise<ActionRowBuilder<ButtonBuilder>> {
+  const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import(
+    /* webpackIgnore: true */ "discord.js"
+  );
+
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(ids.markReady)
+      .setLabel("Mark Ready")
+      .setEmoji(READY_EMOJI)
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(ids.markNotReady)
+      .setLabel("Mark Not Ready")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(ids.refresh)
+      .setLabel("Refresh")
+      .setStyle(ButtonStyle.Primary),
+  );
+}
+
+/**
  * Build the rich status embed shown by `/status`, `/ready`, and button updates.
  * discord.js runtime classes are imported dynamically so this module can be
  * loaded without eagerly pulling in the (server-external) discord.js package.
@@ -61,9 +111,7 @@ export function formatReadyLines(summary: ReadySummary): string {
 export async function buildReadyStatusMessage(
   summary: ReadySummary,
 ): Promise<Pick<InteractionReplyOptions, "embeds" | "components">> {
-  const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import(
-    /* webpackIgnore: true */ "discord.js"
-  );
+  const { EmbedBuilder } = await import(/* webpackIgnore: true */ "discord.js");
 
   const progress = `${summary.readyCount}/${summary.requiredCount} ready` +
     (summary.requiredCount !== summary.totalCount
@@ -88,21 +136,7 @@ export async function buildReadyStatusMessage(
     embed.addFields({ name: "Deadline", value: deadline, inline: true });
   }
 
-  const row: ActionRowBuilder<ButtonBuilder> = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId(READY_BUTTON_IDS.markReady)
-      .setLabel("Mark Ready")
-      .setEmoji(READY_EMOJI)
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId(READY_BUTTON_IDS.markNotReady)
-      .setLabel("Mark Not Ready")
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(READY_BUTTON_IDS.refresh)
-      .setLabel("Refresh")
-      .setStyle(ButtonStyle.Primary),
-  );
+  const row: ActionRowBuilder<ButtonBuilder> = await buildReadyButtonRow(READY_BUTTON_IDS);
 
   return { embeds: [embed], components: [row] };
 }
