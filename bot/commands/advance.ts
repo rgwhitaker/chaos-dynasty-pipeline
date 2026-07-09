@@ -30,6 +30,13 @@ export const advanceCommand: BotCommand = {
         )
         .setMinValue(MIN_DEADLINE_HOURS)
         .setMaxValue(MAX_DEADLINE_HOURS),
+    )
+    .addBooleanOption((option) =>
+      option
+        .setName("force")
+        .setDescription(
+          "Advance even if not enough teams are marked ready (e.g. ready in-game or past deadline).",
+        ),
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
@@ -46,6 +53,7 @@ export const advanceCommand: BotCommand = {
 
     const deadlineOverrideHours =
       interaction.options.getInteger("deadline_hours") ?? undefined;
+    const force = interaction.options.getBoolean("force") ?? false;
 
     // Defer the public reply so advancing (which touches the store) stays within
     // Discord's response window.
@@ -53,9 +61,7 @@ export const advanceCommand: BotCommand = {
 
     try {
       const store = getReadyStore();
-      const result = await store.advanceWeek(
-        deadlineOverrideHours ? { deadlineOverrideHours } : undefined,
-      );
+      const result = await store.advanceWeek({ deadlineOverrideHours, force });
 
       if (!result.advanced) {
         // Already at the end of the schedule — there is nowhere left to go.
@@ -76,7 +82,8 @@ export const advanceCommand: BotCommand = {
         await interaction.editReply({
           content:
             `Not enough teams are ready to advance ${summary.weekName} ` +
-            `(${summary.readyCount}/${summary.requiredCount}).`,
+            `(${summary.readyCount}/${summary.requiredCount}). ` +
+            "Re-run with `force: true` to advance anyway.",
           ...message,
         });
         return;
@@ -87,12 +94,15 @@ export const advanceCommand: BotCommand = {
       const deadlineLine = deadline
         ? `\n🗓️ Deadline: ${deadline}`
         : "";
+      const forcedLine = result.forced
+        ? "\n⚠️ Forced advance — not all teams were marked ready in the bot."
+        : "";
 
       // Public announcement of the new week + deadline for the whole channel.
       await interaction.editReply({
         content:
           `📢 The dynasty has advanced from **${result.previousWeekName}** to ` +
-          `**${result.currentWeekName}**! Ready statuses have been reset.${deadlineLine}`,
+          `**${result.currentWeekName}**! Ready statuses have been reset.${deadlineLine}${forcedLine}`,
         ...message,
       });
 

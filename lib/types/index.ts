@@ -123,6 +123,11 @@ export interface AdvanceResult {
    * week of the schedule (there is nowhere left to advance to).
    */
   atLastWeek: boolean;
+  /**
+   * True when the advance was forced past the ready-count requirement (i.e. it
+   * happened even though not enough teams were marked ready).
+   */
+  forced?: boolean;
   summary: ReadySummary;
 }
 

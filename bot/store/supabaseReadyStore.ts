@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
+  AdvanceOptions,
   CreateTeamInput,
   ReadyStore,
   UpdateTeamInput,
@@ -463,10 +464,11 @@ export class SupabaseReadyStore implements ReadyStore {
     };
   }
 
-  async advanceWeek(options?: WeekDeadlineOptions): Promise<AdvanceResult> {
+  async advanceWeek(options?: AdvanceOptions): Promise<AdvanceResult> {
     const summary = await this.getReadySummary();
     const previousWeek = summary.weekNumber;
     const previousWeekName = getWeekName(previousWeek);
+    const force = options?.force ?? false;
 
     // Refuse to advance past the last week of the schedule.
     if (isLastWeekIndex(previousWeek)) {
@@ -481,7 +483,8 @@ export class SupabaseReadyStore implements ReadyStore {
       };
     }
 
-    if (!summary.canAdvance) {
+    // Unless forced, require enough teams to be ready.
+    if (!force && !summary.canAdvance) {
       return {
         advanced: false,
         previousWeek,
@@ -492,6 +495,9 @@ export class SupabaseReadyStore implements ReadyStore {
         summary,
       };
     }
+
+    // The advance is "forced" when it only happened because of the override.
+    const forced = force && !summary.canAdvance;
 
     const nextWeek = previousWeek + 1;
 
@@ -509,6 +515,7 @@ export class SupabaseReadyStore implements ReadyStore {
       currentWeekName: nextState.weekName,
       deadline: nextState.deadline,
       atLastWeek: false,
+      forced,
       summary: nextSummary,
     };
   }
