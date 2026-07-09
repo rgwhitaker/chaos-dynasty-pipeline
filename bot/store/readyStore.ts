@@ -263,6 +263,14 @@ export class InMemoryReadyStore implements ReadyStore {
     const week = getWeekByIndex(weekNumber)!;
     this.currentWeekIndex = weekNumber;
     this.deadline = calculateDeadline(week, options?.deadlineOverrideHours);
+    // Reset readiness for the target week so every team starts NOT_READY,
+    // clearing any stale rows from a previous visit. Jumping to a week must not
+    // carry over (or appear to set) a ready status for any team.
+    for (const key of [...this.readyStates.keys()]) {
+      if (key.startsWith(`${weekNumber}:`)) {
+        this.readyStates.delete(key);
+      }
+    }
     return this.buildWeekState();
   }
 
