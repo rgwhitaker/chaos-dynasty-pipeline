@@ -4,12 +4,10 @@ import type {
   ButtonInteraction,
 } from "discord.js";
 import { executeAdvance } from "@/bot/commands/advance";
-import { getLeagueConfig } from "@/bot/config";
-import { isCommissioner } from "@/bot/permissions";
 import { ADVANCE_EMOJI, DASHBOARD_ADVANCE_BUTTON_IDS } from "@/bot/ui/readyMessage";
 
 /**
- * Build the ephemeral confirmation prompt shown after a commissioner clicks the
+ * Build the ephemeral confirmation prompt shown after a member clicks the
  * dashboard **Advance Week** button. It carries Confirm / Cancel buttons so an
  * accidental click can't roll the week forward — the actual advance only runs
  * once Confirm is pressed.
@@ -33,13 +31,13 @@ async function buildAdvanceConfirmRow(): Promise<ActionRowBuilder<ButtonBuilder>
 }
 
 /**
- * Handle the commissioner-only Advance flow on the persistent status dashboard:
+ * Handle the Advance flow on the persistent status dashboard, open to everyone:
  *
- *  1. **Advance Week** (`advance`) — verify the clicker is a commissioner, then
- *     reply with an ephemeral Confirm / Cancel prompt to guard against accidental
- *     advances. The prompt is only ever seen by the person who clicked.
+ *  1. **Advance Week** (`advance`) — reply with an ephemeral Confirm / Cancel
+ *     prompt to guard against accidental advances. The prompt is only ever seen
+ *     by the person who clicked.
  *  2. **Cancel** (`cancel`) — dismiss the prompt without advancing.
- *  3. **Confirm Advance** (`confirm`) — re-check permissions, run the shared
+ *  3. **Confirm Advance** (`confirm`) — run the shared
  *     {@link executeAdvance} logic (roll the week, recalculate the deadline,
  *     reset readiness, refresh the dashboard), post the advance announcement
  *     publicly in the channel, and collapse the ephemeral prompt to a receipt.
@@ -59,17 +57,6 @@ export async function handleAdvanceButton(
     return false;
   }
 
-  // Commissioner gate applies to every step: even if a regular member somehow
-  // triggers a confirm/cancel id, they cannot advance the week.
-  const config = getLeagueConfig();
-  if (!isCommissioner(interaction, config)) {
-    await interaction.reply({
-      content: "Only commissioners can advance the week.",
-      ephemeral: true,
-    });
-    return true;
-  }
-
   // Step 1: open the confirmation prompt (ephemeral, only the clicker sees it).
   if (customId === ids.advance) {
     const row = await buildAdvanceConfirmRow();
@@ -84,7 +71,7 @@ export async function handleAdvanceButton(
     return true;
   }
 
-  // Step 2: the commissioner backed out — collapse the prompt.
+  // Step 2: the clicker backed out — collapse the prompt.
   if (customId === ids.cancel) {
     await interaction.update({
       content: "Advance cancelled — nothing was changed.",
@@ -101,7 +88,7 @@ export async function handleAdvanceButton(
 
     if (result.advanced) {
       // Post the public announcement in the channel the dashboard lives in, then
-      // leave the commissioner a short ephemeral receipt.
+      // leave the clicker a short ephemeral receipt.
       const channel = interaction.channel;
       if (channel && "send" in channel) {
         await channel.send(payload);
@@ -114,7 +101,7 @@ export async function handleAdvanceButton(
     }
 
     // Not advanced (end of season or not enough teams ready): surface the reason
-    // to the commissioner privately without spamming the channel.
+    // to the clicker privately without spamming the channel.
     await interaction.editReply(payload);
   } catch (error) {
     console.error("[advance-button] Failed to advance the week", error);
