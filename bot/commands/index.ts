@@ -13,6 +13,7 @@ import { setReadyCommand } from "@/bot/commands/setReady";
 import { setWeekCommand } from "@/bot/commands/setWeek";
 import { statusCommand } from "@/bot/commands/status";
 import { unlinkCommand } from "@/bot/commands/unlink";
+import { updateStatusDashboard } from "@/bot/statusDashboard";
 import { getReadyStore } from "@/bot/store/readyStore";
 import { buildReadyStatusMessage, READY_BUTTON_IDS } from "@/bot/ui/readyMessage";
 
@@ -104,6 +105,9 @@ export async function handleReadyButton(interaction: ButtonInteraction): Promise
     const message = await buildReadyStatusMessage(summary);
     // Update the shared status message in place so everyone sees the change.
     await interaction.editReply(message);
+
+    // Keep the persistent status dashboard in sync with this change.
+    await updateStatusDashboard(interaction.client);
   } catch (error) {
     console.error("[ready-button] Failed to update ready status", error);
     await interaction.followUp({

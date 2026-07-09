@@ -68,6 +68,16 @@ export function getNewspaperChannelId(): string | undefined {
 }
 
 /**
+ * The Discord channel id that hosts the persistent status dashboard and receives
+ * the recurring "not ready" reminders. When unset, the dashboard is not
+ * maintained and reminders are skipped (a warning is logged). Set
+ * `STATUS_CHANNEL_ID` to enable both.
+ */
+export function getStatusChannelId(): string | undefined {
+  return process.env.STATUS_CHANNEL_ID?.trim() || undefined;
+}
+
+/**
  * Whether the bot should attempt to start/log in. Defaults to disabled so the
  * Next.js app can run (build, preview, tests) without Discord credentials.
  */

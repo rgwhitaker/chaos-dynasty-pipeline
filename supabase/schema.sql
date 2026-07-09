@@ -110,6 +110,21 @@ create table if not exists public.box_scores (
 create index if not exists box_scores_dynasty_week_idx
   on public.box_scores (dynasty_id, week, created_at desc);
 
+-- Bot runtime state ----------------------------------------------------------
+-- One row per dynasty holding small pieces of state the Discord bot needs to
+-- survive restarts:
+--   * `status_channel_id` / `status_message_id` — the single persistent status
+--     dashboard message (edited in place instead of reposting each update).
+--   * `last_reminder_at` — when the recurring "not ready" reminder last ran, so
+--     the 12h cadence is preserved across restarts.
+create table if not exists public.bot_state (
+  dynasty_id        text primary key default 'default',
+  status_channel_id text,
+  status_message_id text,
+  last_reminder_at  timestamptz,
+  updated_at        timestamptz not null default now()
+);
+
 -- Row level security ----------------------------------------------------------
 -- The Discord bot talks to Supabase with the service role key, which bypasses
 -- RLS. Enabling RLS with no public policies keeps these tables private from the
@@ -120,3 +135,4 @@ alter table public.dynasty_state enable row level security;
 alter table public.team_ready_states enable row level security;
 alter table public.newspapers enable row level security;
 alter table public.box_scores enable row level security;
+alter table public.bot_state enable row level security;
