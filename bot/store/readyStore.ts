@@ -511,6 +511,13 @@ export class InMemoryReadyStore implements ReadyStore {
       team.readyStatus = "NOT_READY";
       team.updatedAt = new Date().toISOString();
     }
+    // Clear any readiness recorded for the new week (e.g. stale rows left over
+    // from a previous visit to this week) so everyone starts NOT_READY.
+    for (const key of [...this.readyStates.keys()]) {
+      if (key.startsWith(`${nextWeek}:`)) {
+        this.readyStates.delete(key);
+      }
+    }
     const nextState = await this.setCurrentWeek(nextWeek, options);
 
     const nextSummary = await this.getReadySummary();

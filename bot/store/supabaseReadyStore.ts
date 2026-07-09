@@ -501,9 +501,12 @@ export class SupabaseReadyStore implements ReadyStore {
 
     const nextWeek = previousWeek + 1;
 
+    // Reset readiness for the new week so everyone starts NOT_READY, clearing
+    // any stale rows left over from a previous visit to this week.
+    await this.clearReadyStates(nextWeek);
+
     // Point the dynasty at the next week and calculate its deadline. Readiness
-    // for the new week starts empty (no rows) so every team is implicitly
-    // NOT_READY.
+    // for the new week was cleared above, so every team starts NOT_READY.
     const nextState = await this.setCurrentWeek(nextWeek, options);
 
     const nextSummary = await this.getReadySummary();
@@ -530,6 +533,20 @@ export class SupabaseReadyStore implements ReadyStore {
       ready?.is_ready ? "READY" : "NOT_READY",
       ready?.updated_at ?? new Date().toISOString(),
     );
+  }
+
+  /** Delete all readiness rows for a week so every team starts NOT_READY. */
+  private async clearReadyStates(weekNumber: number): Promise<void> {
+    const { error } = await this.client
+      .from(TABLES.teamReadyStates)
+      .delete()
+      .eq("week", weekNumber);
+
+    if (error) {
+      throw new Error(
+        `Failed to reset ready states for week ${weekNumber}: ${error.message}`,
+      );
+    }
   }
 
   private async fetchTeamRows(): Promise<TeamRow[]> {
