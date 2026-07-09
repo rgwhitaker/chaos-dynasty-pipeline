@@ -60,6 +60,16 @@ export interface WeekDeadlineOptions {
   deadlineOverrideHours?: number;
 }
 
+/** Options controlling an advance attempt. */
+export interface AdvanceOptions extends WeekDeadlineOptions {
+  /**
+   * Force the advance even when fewer teams than required are marked ready.
+   * Used by commissioners when teams are ready in-game but not in the bot, or
+   * when the deadline has been reached. Does not bypass the last-week guard.
+   */
+  force?: boolean;
+}
+
 /**
  * Storage contract for the ready-to-advance system.
  *
@@ -136,9 +146,10 @@ export interface ReadyStore {
    * Advance to the next week in the schedule when enough teams are ready. Resets
    * readiness for the new week and calculates its deadline (overridable via
    * `options.deadlineOverrideHours`). Returns whether the advance actually
-   * happened; refuses to advance past the last week of the schedule.
+   * happened; refuses to advance past the last week of the schedule. Pass
+   * `options.force` to advance even when not enough teams are ready.
    */
-  advanceWeek(options?: WeekDeadlineOptions): Promise<AdvanceResult>;
+  advanceWeek(options?: AdvanceOptions): Promise<AdvanceResult>;
 }
 
 /** Seed teams used while everything is in memory (pre-Supabase). */
@@ -459,10 +470,11 @@ export class InMemoryReadyStore implements ReadyStore {
     };
   }
 
-  async advanceWeek(options?: WeekDeadlineOptions): Promise<AdvanceResult> {
+  async advanceWeek(options?: AdvanceOptions): Promise<AdvanceResult> {
     const summary = await this.getReadySummary();
     const previousWeek = this.currentWeekIndex;
     const previousWeekName = getWeekName(previousWeek);
+    const force = options?.force ?? false;
 
     // Refuse to advance past the last week of the schedule.
     if (isLastWeekIndex(previousWeek)) {
@@ -477,7 +489,8 @@ export class InMemoryReadyStore implements ReadyStore {
       };
     }
 
-    if (!summary.canAdvance) {
+    // Unless forced, require enough teams to be ready.
+    if (!force && !summary.canAdvance) {
       return {
         advanced: false,
         previousWeek,
@@ -488,6 +501,9 @@ export class InMemoryReadyStore implements ReadyStore {
         summary,
       };
     }
+
+    // The advance is "forced" when it only happened because of the override.
+    const forced = force && !summary.canAdvance;
 
     // Move to the next week and reset readiness so the new week starts clean.
     const nextWeek = previousWeek + 1;
@@ -506,6 +522,7 @@ export class InMemoryReadyStore implements ReadyStore {
       currentWeekName: nextState.weekName,
       deadline: nextState.deadline,
       atLastWeek: false,
+      forced,
       summary: nextSummary,
     };
   }
