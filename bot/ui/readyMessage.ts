@@ -25,6 +25,20 @@ export const DASHBOARD_BUTTON_IDS = {
   refresh: "status-dashboard:refresh",
 } as const;
 
+/**
+ * Custom ids for the commissioner-only Advance flow on the persistent status
+ * dashboard message. `advance` opens an ephemeral confirmation; `confirm` and
+ * `cancel` back the two buttons on that confirmation prompt. They share the
+ * dashboard id namespace so the interaction router can recognise and dispatch
+ * them from the global `InteractionCreate` listener, which keeps them working
+ * across bot restarts with no per-message collectors to re-register.
+ */
+export const DASHBOARD_ADVANCE_BUTTON_IDS = {
+  advance: "status-dashboard:advance",
+  confirm: "status-dashboard:advance-confirm",
+  cancel: "status-dashboard:advance-cancel",
+} as const;
+
 /** The shape of a set of ready-button custom ids (mark / unmark / refresh). */
 export type ReadyButtonIds = {
   markReady: string;

@@ -50,6 +50,9 @@ export function getCommandPayloads() {
   return commands.map((command) => command.data.toJSON());
 }
 
+/** Re-exported so the client's interaction router can dispatch dashboard buttons. */
+export { handleAdvanceButton } from "@/bot/commands/advanceButton";
+
 /**
  * Handle the ready-status buttons. The same three actions (mark ready, mark not
  * ready, refresh) back two surfaces: the ephemeral `/status` reply and the

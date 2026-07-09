@@ -1,16 +1,98 @@
 import { SlashCommandBuilder } from "discord.js";
-import type { ChatInputCommandInteraction } from "discord.js";
+import type { ChatInputCommandInteraction, Client, InteractionReplyOptions } from "discord.js";
 import type { BotCommand } from "@/bot/commands/types";
 import { getLeagueConfig } from "@/bot/config";
 import { isCommissioner } from "@/bot/permissions";
 import { updateStatusDashboard } from "@/bot/statusDashboard";
 import { getReadyStore } from "@/bot/store/readyStore";
+import type { AdvanceOptions } from "@/bot/store/readyStore";
 import { MS_PER_HOUR } from "@/bot/time";
 import { buildReadyStatusMessage, formatDeadline } from "@/bot/ui/readyMessage";
+import type { AdvanceResult } from "@/lib/types";
 
 /** Bounds for the optional deadline override (in hours). */
 const MIN_DEADLINE_HOURS = 1;
 const MAX_DEADLINE_HOURS = 720; // 30 days
+
+/** A ready-to-send message payload describing the outcome of an advance attempt. */
+export type AdvanceReplyPayload = Pick<
+  InteractionReplyOptions,
+  "content" | "embeds" | "components"
+>;
+
+/**
+ * Render the message payload (announcement + status embed + buttons) that
+ * describes the outcome of an {@link AdvanceResult}. Shared by the `/advance`
+ * command and the dashboard Advance button so both surfaces speak identically,
+ * covering all three outcomes: end-of-season, not-enough-ready, and advanced.
+ */
+export async function buildAdvanceReplyPayload(
+  result: AdvanceResult,
+): Promise<AdvanceReplyPayload> {
+  if (!result.advanced) {
+    // Already at the end of the schedule — there is nowhere left to go.
+    if (result.atLastWeek) {
+      const message = await buildReadyStatusMessage(result.summary);
+      return {
+        content:
+          `**${result.previousWeekName}** is the final week of the season — ` +
+          "there is nothing left to advance to. Use `/set-week` to jump to " +
+          "another week if you need to reset the schedule.",
+        ...message,
+      };
+    }
+
+    const { summary } = result;
+    const message = await buildReadyStatusMessage(summary);
+    return {
+      content:
+        `Not enough teams are ready to advance ${summary.weekName} ` +
+        `(${summary.readyCount}/${summary.requiredCount}). ` +
+        "Re-run with `force: true` to advance anyway.",
+      ...message,
+    };
+  }
+
+  const message = await buildReadyStatusMessage(result.summary);
+  const deadline = formatDeadline(result.deadline);
+  const deadlineLine = deadline ? `\n🗓️ Deadline: ${deadline}` : "";
+  // Announce, in plain language, when the next advance will happen.
+  const nextAdvanceLine = formatNextAdvanceLine(result.deadline);
+  const forcedLine = result.forced
+    ? "\n⚠️ Forced advance — not all teams were marked ready in the bot."
+    : "";
+
+  return {
+    content:
+      `📢 The dynasty has advanced from **${result.previousWeekName}** to ` +
+      `**${result.currentWeekName}**! Ready statuses have been reset.` +
+      `${deadlineLine}${nextAdvanceLine}${forcedLine}`,
+    ...message,
+  };
+}
+
+/**
+ * Run the shared advance logic against the ready store and, on a successful
+ * advance, refresh the persistent status dashboard so it reflects the new week
+ * and freshly-reset readiness. Returns both the raw {@link AdvanceResult} and a
+ * ready-to-send {@link AdvanceReplyPayload}. This is the single entry point
+ * reused by the `/advance` command and the dashboard Advance button.
+ */
+export async function executeAdvance(
+  client: Client,
+  options: AdvanceOptions,
+): Promise<{ result: AdvanceResult; payload: AdvanceReplyPayload }> {
+  const store = getReadyStore();
+  const result = await store.advanceWeek(options);
+  const payload = await buildAdvanceReplyPayload(result);
+
+  if (result.advanced) {
+    // Best-effort — the updater never throws.
+    await updateStatusDashboard(client);
+  }
+
+  return { result, payload };
+}
 
 /**
  * `/advance` — advance the league to the next week once enough teams are ready.
@@ -64,58 +146,11 @@ export const advanceCommand: BotCommand = {
     await interaction.deferReply();
 
     try {
-      const store = getReadyStore();
-      const result = await store.advanceWeek({ deadlineOverrideHours, force });
-
-      if (!result.advanced) {
-        // Already at the end of the schedule — there is nowhere left to go.
-        if (result.atLastWeek) {
-          const message = await buildReadyStatusMessage(result.summary);
-          await interaction.editReply({
-            content:
-              `**${result.previousWeekName}** is the final week of the season — ` +
-              "there is nothing left to advance to. Use `/set-week` to jump to " +
-              "another week if you need to reset the schedule.",
-            ...message,
-          });
-          return;
-        }
-
-        const { summary } = result;
-        const message = await buildReadyStatusMessage(summary);
-        await interaction.editReply({
-          content:
-            `Not enough teams are ready to advance ${summary.weekName} ` +
-            `(${summary.readyCount}/${summary.requiredCount}). ` +
-            "Re-run with `force: true` to advance anyway.",
-          ...message,
-        });
-        return;
-      }
-
-      const message = await buildReadyStatusMessage(result.summary);
-      const deadline = formatDeadline(result.deadline);
-      const deadlineLine = deadline
-        ? `\n🗓️ Deadline: ${deadline}`
-        : "";
-      // Announce, in plain language, when the next advance will happen.
-      const nextAdvanceLine = formatNextAdvanceLine(result.deadline);
-      const forcedLine = result.forced
-        ? "\n⚠️ Forced advance — not all teams were marked ready in the bot."
-        : "";
-
-      // Public announcement of the new week + deadline for the whole channel.
-      await interaction.editReply({
-        content:
-          `📢 The dynasty has advanced from **${result.previousWeekName}** to ` +
-          `**${result.currentWeekName}**! Ready statuses have been reset.` +
-          `${deadlineLine}${nextAdvanceLine}${forcedLine}`,
-        ...message,
+      const { payload } = await executeAdvance(interaction.client, {
+        deadlineOverrideHours,
+        force,
       });
-
-      // Refresh the persistent status dashboard so it reflects the new week and
-      // freshly-reset readiness. Best-effort — the updater never throws.
-      await updateStatusDashboard(interaction.client);
+      await interaction.editReply(payload);
     } catch (error) {
       console.error("[advance] Failed to advance the week", error);
       await interaction.editReply({
