@@ -3,6 +3,7 @@ import type { ChatInputCommandInteraction } from "discord.js";
 import type { BotCommand } from "@/bot/commands/types";
 import { getLeagueConfig } from "@/bot/config";
 import { isCommissioner } from "@/bot/permissions";
+import { updateStatusDashboard } from "@/bot/statusDashboard";
 import { getReadyStore } from "@/bot/store/readyStore";
 import { buildReadyStatusMessage } from "@/bot/ui/readyMessage";
 
@@ -84,6 +85,9 @@ export const setReadyCommand: BotCommand = {
           `**${team.name}** (${targetUser}) is now marked **${verb}** for ${summary.weekName}.`,
         ...message,
       });
+
+      // Keep the persistent status dashboard in sync with this change.
+      await updateStatusDashboard(interaction.client);
     } catch (error) {
       console.error("[set-ready] Failed to update ready status", error);
       await interaction.editReply({

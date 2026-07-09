@@ -3,6 +3,7 @@ import type { AutocompleteInteraction, ChatInputCommandInteraction } from "disco
 import type { BotCommand } from "@/bot/commands/types";
 import { getLeagueConfig } from "@/bot/config";
 import { isCommissioner } from "@/bot/permissions";
+import { updateStatusDashboard } from "@/bot/statusDashboard";
 import { getReadyStore } from "@/bot/store/readyStore";
 import { buildReadyStatusMessage, formatDeadline } from "@/bot/ui/readyMessage";
 import { findWeekIndexByName, searchWeeks } from "@/lib/weekSchedule";
@@ -106,6 +107,9 @@ export const setWeekCommand: BotCommand = {
           `📢 The dynasty is now on **${weekState.weekName}**.${deadlineLine}`,
         ...message,
       });
+
+      // Keep the persistent status dashboard in sync with the new week.
+      await updateStatusDashboard(interaction.client);
     } catch (error) {
       console.error("[set-week] Failed to set the current week", error);
       await interaction.editReply({

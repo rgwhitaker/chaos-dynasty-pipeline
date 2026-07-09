@@ -117,6 +117,14 @@ function attachLifecycleListeners(
   client.once(Events.ClientReady, (readyClient) => {
     logBot(`Logged in as ${readyClient.user.tag} (id: ${readyClient.user.id}).`);
     logBot(`Serving ${readyClient.guilds.cache.size} guild(s).`);
+
+    // Start the background scheduler (recurring reminders + persistent status
+    // dashboard) once the gateway connection is live. Imported dynamically so
+    // this module stays free of eager bot/store imports, matching the rest of
+    // the client wiring.
+    void import("@/bot/scheduler")
+      .then(({ startScheduler }) => startScheduler(readyClient))
+      .catch((error) => logError("Failed to start the reminder scheduler", error));
   });
 
   client.on(Events.Error, (error) => {

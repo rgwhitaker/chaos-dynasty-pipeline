@@ -2,8 +2,8 @@ import { SlashCommandBuilder } from "discord.js";
 import type { ChatInputCommandInteraction } from "discord.js";
 import type { BotCommand } from "@/bot/commands/types";
 import { getLeagueConfig } from "@/bot/config";
-import { generateAndPostNewspaper } from "@/bot/newspaper";
 import { isCommissioner } from "@/bot/permissions";
+import { updateStatusDashboard } from "@/bot/statusDashboard";
 import { getReadyStore } from "@/bot/store/readyStore";
 import { buildReadyStatusMessage, formatDeadline } from "@/bot/ui/readyMessage";
 
@@ -94,6 +94,8 @@ export const advanceCommand: BotCommand = {
       const deadlineLine = deadline
         ? `\n🗓️ Deadline: ${deadline}`
         : "";
+      // Announce, in plain language, when the next advance will happen.
+      const nextAdvanceLine = formatNextAdvanceLine(result.deadline);
       const forcedLine = result.forced
         ? "\n⚠️ Forced advance — not all teams were marked ready in the bot."
         : "";
@@ -102,14 +104,14 @@ export const advanceCommand: BotCommand = {
       await interaction.editReply({
         content:
           `📢 The dynasty has advanced from **${result.previousWeekName}** to ` +
-          `**${result.currentWeekName}**! Ready statuses have been reset.${deadlineLine}${forcedLine}`,
+          `**${result.currentWeekName}**! Ready statuses have been reset.` +
+          `${deadlineLine}${nextAdvanceLine}${forcedLine}`,
         ...message,
       });
 
-      // Generate and post the Weekly Newspaper for the week that just ended.
-      // This runs after the advance reply so a slow Grok call (or a newspaper
-      // failure) never blocks or breaks the core advance flow.
-      await publishWeeklyNewspaper(interaction, result.previousWeek, result.previousWeekName);
+      // Refresh the persistent status dashboard so it reflects the new week and
+      // freshly-reset readiness. Best-effort — the updater never throws.
+      await updateStatusDashboard(interaction.client);
     } catch (error) {
       console.error("[advance] Failed to advance the week", error);
       await interaction.editReply({
@@ -120,33 +122,25 @@ export const advanceCommand: BotCommand = {
 };
 
 /**
- * Generate + post the Weekly Newspaper for the week that just ended, then send a
- * short ephemeral follow-up letting the commissioner know how it went. All
- * failures are caught here so the (already-successful) advance is never undone.
+ * Build the "We will advance again in ~N hours" line from the new deadline, so
+ * the announcement clearly states when the next advance window closes. Returns
+ * an empty string when there is no deadline (or it is already in the past).
  */
-async function publishWeeklyNewspaper(
-  interaction: ChatInputCommandInteraction,
-  weekNumber: number,
-  weekName: string,
-): Promise<void> {
-  try {
-    const result = await generateAndPostNewspaper(interaction.client, weekNumber);
-    const note = result.posted
-      ? `📰 Weekly Newspaper for ${weekName} posted to <#${result.channelId}>.`
-      : `📰 Weekly Newspaper for ${weekName} generated, but not posted ` +
-        "(set `NEWSPAPER_CHANNEL_ID` to enable posting).";
-    await interaction.followUp({ content: note, ephemeral: true });
-  } catch (error) {
-    console.error("[advance] Failed to generate the weekly newspaper", error);
-    try {
-      await interaction.followUp({
-        content:
-          `${weekName} advanced, but I couldn't generate the Weekly ` +
-          "Newspaper. You can retry with `/newspaper`.",
-        ephemeral: true,
-      });
-    } catch (followUpError) {
-      console.error("[advance] Failed to send newspaper follow-up", followUpError);
-    }
+function formatNextAdvanceLine(deadline?: string): string {
+  if (!deadline) {
+    return "";
   }
+
+  const parsed = Date.parse(deadline);
+  if (Number.isNaN(parsed)) {
+    return "";
+  }
+
+  const hours = Math.round((parsed - Date.now()) / 3_600_000);
+  if (hours <= 0) {
+    return "";
+  }
+
+  const unit = hours === 1 ? "hour" : "hours";
+  return `\n⏭️ We will advance again in ~${hours} ${unit} (once enough teams are ready).`;
 }
