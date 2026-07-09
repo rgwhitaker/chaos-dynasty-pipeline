@@ -2,7 +2,6 @@ import { SlashCommandBuilder } from "discord.js";
 import type { ChatInputCommandInteraction } from "discord.js";
 import type { BotCommand } from "@/bot/commands/types";
 import { getLeagueConfig } from "@/bot/config";
-import { generateAndPostNewspaper } from "@/bot/newspaper";
 import { isCommissioner } from "@/bot/permissions";
 import { getReadyStore } from "@/bot/store/readyStore";
 import { buildReadyStatusMessage, formatDeadline } from "@/bot/ui/readyMessage";
@@ -17,6 +16,9 @@ const MAX_DEADLINE_HOURS = 720; // 30 days
  *
  * An optional `deadline_hours` overrides the automatically-calculated deadline
  * window for the new week (e.g. force 24h even on a 48h game week).
+ *
+ * Advancing only rolls the week forward, resets readiness, and announces the new
+ * week. Generating the Weekly Newspaper is fully manual via `/newspaper`.
  */
 export const advanceCommand: BotCommand = {
   data: new SlashCommandBuilder()
@@ -105,11 +107,6 @@ export const advanceCommand: BotCommand = {
           `**${result.currentWeekName}**! Ready statuses have been reset.${deadlineLine}${forcedLine}`,
         ...message,
       });
-
-      // Generate and post the Weekly Newspaper for the week that just ended.
-      // This runs after the advance reply so a slow Grok call (or a newspaper
-      // failure) never blocks or breaks the core advance flow.
-      await publishWeeklyNewspaper(interaction, result.previousWeek, result.previousWeekName);
     } catch (error) {
       console.error("[advance] Failed to advance the week", error);
       await interaction.editReply({
@@ -118,35 +115,3 @@ export const advanceCommand: BotCommand = {
     }
   },
 };
-
-/**
- * Generate + post the Weekly Newspaper for the week that just ended, then send a
- * short ephemeral follow-up letting the commissioner know how it went. All
- * failures are caught here so the (already-successful) advance is never undone.
- */
-async function publishWeeklyNewspaper(
-  interaction: ChatInputCommandInteraction,
-  weekNumber: number,
-  weekName: string,
-): Promise<void> {
-  try {
-    const result = await generateAndPostNewspaper(interaction.client, weekNumber);
-    const note = result.posted
-      ? `📰 Weekly Newspaper for ${weekName} posted to <#${result.channelId}>.`
-      : `📰 Weekly Newspaper for ${weekName} generated, but not posted ` +
-        "(set `NEWSPAPER_CHANNEL_ID` to enable posting).";
-    await interaction.followUp({ content: note, ephemeral: true });
-  } catch (error) {
-    console.error("[advance] Failed to generate the weekly newspaper", error);
-    try {
-      await interaction.followUp({
-        content:
-          `${weekName} advanced, but I couldn't generate the Weekly ` +
-          "Newspaper. You can retry with `/newspaper`.",
-        ephemeral: true,
-      });
-    } catch (followUpError) {
-      console.error("[advance] Failed to send newspaper follow-up", followUpError);
-    }
-  }
-}
