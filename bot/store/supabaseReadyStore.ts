@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { CreateTeamInput, ReadyStore, UpdateTeamInput } from "@/bot/store/readyStore";
+import type {
+  CreateTeamInput,
+  ReadyStore,
+  UpdateTeamInput,
+  WeekDeadlineOptions,
+} from "@/bot/store/readyStore";
 import {
   generateAbbreviation,
   normalizeAbbreviation,
@@ -7,6 +12,14 @@ import {
   normalizeTeamName,
   slugifyTeamName,
 } from "@/bot/store/teamNaming";
+import {
+  calculateDeadline,
+  clampWeekIndex,
+  getWeekByIndex,
+  getWeekName,
+  isLastWeekIndex,
+  isValidWeekIndex,
+} from "@/lib/weekSchedule";
 import type {
   AdvanceResult,
   LeagueConfig,
@@ -15,14 +28,13 @@ import type {
   ReadySummaryEntry,
   Team,
   TeamReadyState,
-  WeekPhase,
   WeekState,
 } from "@/lib/types";
 
 /** Table names used by the ready-to-advance system. */
 const TABLES = {
   teams: "teams",
-  weekStates: "week_states",
+  dynastyState: "dynasty_state",
   teamReadyStates: "team_ready_states",
 } as const;
 
@@ -39,11 +51,11 @@ interface TeamRow {
   discord_user_id: string | null;
 }
 
-/** Row shape for the `week_states` table. */
-interface WeekStateRow {
+/** Row shape for the `dynasty_state` table (one row per dynasty). */
+interface DynastyStateRow {
   dynasty_id: string;
-  week: number;
-  status: WeekPhase;
+  current_week: number;
+  deadline: string | null;
 }
 
 /** Row shape for the `team_ready_states` table. */
@@ -93,28 +105,33 @@ export class SupabaseReadyStore implements ReadyStore {
   }
 
   async getWeekState(): Promise<WeekState> {
-  const { data, error } = await this.client
-    .from(TABLES.weekStates)
-    .select("dynasty_id, week, status")
-    .eq("dynasty_id", this.config.dynastyId)
-    .order("week", { ascending: false })
-    .limit(1)
-    .maybeSingle<WeekStateRow>();
+    const { data, error } = await this.client
+      .from(TABLES.dynastyState)
+      .select("dynasty_id, current_week, deadline")
+      .eq("dynasty_id", this.config.dynastyId)
+      .maybeSingle<DynastyStateRow>();
 
-  if (error) {
-    throw new Error(`Failed to load week state: ${error.message}`);
+    if (error) {
+      throw new Error(`Failed to load week state: ${error.message}`);
+    }
+
+    if (!data) {
+      // No state yet — initialize the dynasty at its configured start week.
+      const startIndex = clampWeekIndex(this.config.startWeek);
+      return this.upsertDynastyState(startIndex);
+    }
+
+    return this.mapWeekState(data);
   }
 
-  if (!data) {
-    // No week has been initialized yet — create the starting week.
-    return this.upsertWeekState(this.config.startWeek, "READY_CHECK");
-  }
-
-  return this.mapWeekState(data);
-}
-
-  async setCurrentWeek(weekNumber: number): Promise<WeekState> {
-    return this.upsertWeekState(weekNumber, "READY_CHECK");
+  async setCurrentWeek(
+    weekNumber: number,
+    options?: WeekDeadlineOptions,
+  ): Promise<WeekState> {
+    if (!isValidWeekIndex(weekNumber)) {
+      throw new Error(`Invalid week: ${weekNumber}`);
+    }
+    return this.upsertDynastyState(weekNumber, options?.deadlineOverrideHours);
   }
 
   async listTeams(): Promise<Team[]> {
@@ -434,6 +451,9 @@ export class SupabaseReadyStore implements ReadyStore {
     return {
       dynastyId: weekState.dynastyId,
       weekNumber: weekState.weekNumber,
+      weekName: weekState.weekName,
+      isGameWeek: weekState.isGameWeek,
+      deadline: weekState.deadline,
       phase: weekState.phase,
       entries,
       readyCount,
@@ -443,26 +463,52 @@ export class SupabaseReadyStore implements ReadyStore {
     };
   }
 
-  async advanceWeek(): Promise<AdvanceResult> {
+  async advanceWeek(options?: WeekDeadlineOptions): Promise<AdvanceResult> {
     const summary = await this.getReadySummary();
     const previousWeek = summary.weekNumber;
+    const previousWeekName = getWeekName(previousWeek);
+
+    // Refuse to advance past the last week of the schedule.
+    if (isLastWeekIndex(previousWeek)) {
+      return {
+        advanced: false,
+        previousWeek,
+        currentWeek: previousWeek,
+        previousWeekName,
+        currentWeekName: previousWeekName,
+        atLastWeek: true,
+        summary,
+      };
+    }
 
     if (!summary.canAdvance) {
-      return { advanced: false, previousWeek, currentWeek: previousWeek, summary };
+      return {
+        advanced: false,
+        previousWeek,
+        currentWeek: previousWeek,
+        previousWeekName,
+        currentWeekName: previousWeekName,
+        atLastWeek: false,
+        summary,
+      };
     }
 
     const nextWeek = previousWeek + 1;
 
-    // Close out the current week and open the next one. Readiness for the new
-    // week starts empty (no rows) so every team is implicitly NOT_READY.
-    await this.upsertWeekState(previousWeek, "COMPLETE");
-    await this.upsertWeekState(nextWeek, "READY_CHECK");
+    // Point the dynasty at the next week and calculate its deadline. Readiness
+    // for the new week starts empty (no rows) so every team is implicitly
+    // NOT_READY.
+    const nextState = await this.setCurrentWeek(nextWeek, options);
 
     const nextSummary = await this.getReadySummary();
     return {
       advanced: true,
       previousWeek,
       currentWeek: nextWeek,
+      previousWeekName,
+      currentWeekName: nextState.weekName,
+      deadline: nextState.deadline,
+      atLastWeek: false,
       summary: nextSummary,
     };
   }
@@ -519,21 +565,26 @@ export class SupabaseReadyStore implements ReadyStore {
     return map;
   }
 
-  private async upsertWeekState(
+  private async upsertDynastyState(
     weekNumber: number,
-    status: WeekPhase,
+    deadlineOverrideHours?: number,
   ): Promise<WeekState> {
-    const row: WeekStateRow = {
+    const week = getWeekByIndex(weekNumber);
+    const deadline = week
+      ? calculateDeadline(week, deadlineOverrideHours)
+      : null;
+
+    const row: DynastyStateRow = {
       dynasty_id: this.config.dynastyId,
-      week: weekNumber,
-      status,
+      current_week: weekNumber,
+      deadline,
     };
 
     const { data, error } = await this.client
-      .from(TABLES.weekStates)
-      .upsert(row, { onConflict: "dynasty_id,week" })
-      .select("dynasty_id, week, status")
-      .single<WeekStateRow>();
+      .from(TABLES.dynastyState)
+      .upsert(row, { onConflict: "dynasty_id" })
+      .select("dynasty_id, current_week, deadline")
+      .single<DynastyStateRow>();
 
     if (error) {
       throw new Error(`Failed to save week state: ${error.message}`);
@@ -542,12 +593,16 @@ export class SupabaseReadyStore implements ReadyStore {
     return this.mapWeekState(data);
   }
 
-  private mapWeekState(row: WeekStateRow): WeekState {
+  private mapWeekState(row: DynastyStateRow): WeekState {
+    const week = getWeekByIndex(row.current_week);
     return {
-      id: `${row.dynasty_id}:${row.week}`,
+      id: `${row.dynasty_id}:week`,
       dynastyId: row.dynasty_id,
-      weekNumber: row.week,
-      phase: row.status,
+      weekNumber: row.current_week,
+      weekName: getWeekName(row.current_week),
+      isGameWeek: week?.isGameWeek ?? false,
+      deadline: row.deadline ?? undefined,
+      phase: "READY_CHECK",
     };
   }
 }
