@@ -126,9 +126,9 @@ The dynasty runs on a fixed, ordered **season schedule** defined in
 [`lib/weekSchedule.ts`](lib/weekSchedule.ts). Each week carries metadata used to
 drive deadlines:
 
-- `is_game_week` – `true` for weeks where games are played.
-- `default_duration_hours` – the default deadline window: **48h** for game weeks,
-  **24h** for non-game weeks.
+- `is_game_week` (`isGameWeek` in code) – `true` for weeks where games are played.
+- `default_duration_hours` (`defaultDurationHours` in code) – the default deadline
+  window: **48h** for game weeks, **24h** for non-game weeks.
 
 The full schedule, in order, is:
 

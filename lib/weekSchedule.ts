@@ -63,7 +63,7 @@ function nonGameWeek(name: string): WeekDefinition {
   };
 }
 
-/** Week 0 … Week 15 are all game weeks. */
+/** Week 0 … Week 15 are all game weeks (they occupy schedule indices 1–16). */
 const numberedGameWeeks: WeekDefinition[] = Array.from({ length: 16 }, (_, index) =>
   gameWeek(`Week ${index}`),
 );
