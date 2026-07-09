@@ -49,6 +49,9 @@ export type ReadyButtonIds = {
 const READY_EMOJI = "✅";
 const NOT_READY_EMOJI = "⛔";
 
+/** Emoji used on the commissioner Advance button + confirmation prompt. */
+export const ADVANCE_EMOJI = "⏭️";
+
 /**
  * Format an ISO deadline as a Discord timestamp so every viewer sees it in their
  * own timezone, with a relative "in N hours" hint. Returns `undefined` when

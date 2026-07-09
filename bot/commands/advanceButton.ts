@@ -6,9 +6,7 @@ import type {
 import { executeAdvance } from "@/bot/commands/advance";
 import { getLeagueConfig } from "@/bot/config";
 import { isCommissioner } from "@/bot/permissions";
-import { DASHBOARD_ADVANCE_BUTTON_IDS } from "@/bot/ui/readyMessage";
-
-const ADVANCE_EMOJI = "⏭️";
+import { ADVANCE_EMOJI, DASHBOARD_ADVANCE_BUTTON_IDS } from "@/bot/ui/readyMessage";
 
 /**
  * Build the ephemeral confirmation prompt shown after a commissioner clicks the

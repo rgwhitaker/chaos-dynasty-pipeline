@@ -7,6 +7,7 @@ import type {
 import type { ReadySummary } from "@/lib/types";
 import {
   buildReadyButtonRow,
+  ADVANCE_EMOJI,
   DASHBOARD_ADVANCE_BUTTON_IDS,
   DASHBOARD_BUTTON_IDS,
   formatDeadline,
@@ -14,7 +15,6 @@ import {
 
 const READY_EMOJI = "✅";
 const NOT_READY_EMOJI = "⛔";
-const ADVANCE_EMOJI = "⏭️";
 
 /** Zero-width placeholder used when an embed field would otherwise be empty. */
 const EMPTY_FIELD = "_None_";
