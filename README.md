@@ -215,12 +215,10 @@ gateway connection is ready):
   clicker an ephemeral confirmation. The button handlers live on the client's
   global interaction listener, so they keep working across bot restarts with no
   re-registration.
-- A separate green **Advance Week** button gives commissioners a one-click way
+- A separate green **Advance Week** button gives everyone a one-click way
   to advance without typing `/advance`:
-  - It is **commissioner-only**. Non-commissioners who click it just get an
-    ephemeral "Only commissioners can advance the week." reply and nothing
-    happens. (Discord renders one shared message for everyone, so the button is
-    still _visible_ to all — it simply refuses to act for non-commissioners.)
+  - It is **open to everyone** — any member can click it to advance the week.
+    (The `/advance` slash command remains commissioner-only.)
   - Clicking it opens an **ephemeral confirmation** with **Confirm Advance /
     Cancel** buttons, so an accidental click can't roll the week forward.
   - On **Confirm**, it runs the exact same logic as `/advance` (roll to the next
