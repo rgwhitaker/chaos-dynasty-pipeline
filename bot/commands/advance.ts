@@ -18,6 +18,9 @@ const MAX_DEADLINE_HOURS = 720; // 30 days
  *
  * An optional `deadline_hours` overrides the automatically-calculated deadline
  * window for the new week (e.g. force 24h even on a 48h game week).
+ *
+ * Advancing only rolls the week forward, resets readiness, and announces the new
+ * week. Generating the Weekly Newspaper is fully manual via `/newspaper`.
  */
 export const advanceCommand: BotCommand = {
   data: new SlashCommandBuilder()

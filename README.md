@@ -380,9 +380,10 @@ Run [`supabase/schema.sql`](supabase/schema.sql) to create the `newspapers`
 table (it is idempotent, so re-running it on an existing database just adds the
 new table).
 
-### Manual regeneration
+### Manual generation
 
-Commissioners can regenerate and re-post at any time with `/newspaper`:
+Commissioners generate and post (or re-post) a newspaper at any time with
+`/newspaper`:
 
 ```text
 /newspaper                 # most recently completed week

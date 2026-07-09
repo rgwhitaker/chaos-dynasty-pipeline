@@ -132,6 +132,10 @@ export class SupabaseReadyStore implements ReadyStore {
     if (!isValidWeekIndex(weekNumber)) {
       throw new Error(`Invalid week: ${weekNumber}`);
     }
+    // Reset readiness for the target week so every team starts NOT_READY,
+    // clearing any stale rows from a previous visit. Jumping to a week must not
+    // carry over (or appear to set) a ready status for any team.
+    await this.clearReadyStates(weekNumber);
     return this.upsertDynastyState(weekNumber, options?.deadlineOverrideHours);
   }
 
