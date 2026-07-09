@@ -215,13 +215,27 @@ gateway connection is ready):
   clicker an ephemeral confirmation. The button handlers live on the client's
   global interaction listener, so they keep working across bot restarts with no
   re-registration.
+- A separate green **Advance Week** button gives commissioners a one-click way
+  to advance without typing `/advance`:
+  - It is **commissioner-only**. Non-commissioners who click it just get an
+    ephemeral "Only commissioners can advance the week." reply and nothing
+    happens. (Discord renders one shared message for everyone, so the button is
+    still _visible_ to all — it simply refuses to act for non-commissioners.)
+  - Clicking it opens an **ephemeral confirmation** with **Confirm Advance /
+    Cancel** buttons, so an accidental click can't roll the week forward.
+  - On **Confirm**, it runs the exact same logic as `/advance` (roll to the next
+    week, recalculate the deadline, reset readiness, post the public advance
+    announcement, and refresh this dashboard). The commissioner gets a short
+    ephemeral receipt; the announcement itself is posted publicly in the channel.
+  - Like the other buttons, its handler is dispatched from the client's global
+    interaction listener, so it survives bot restarts with no re-registration.
 - The message id is stored in `bot_state` (`status_message_id`), so the same
   message is re-edited across restarts. If it is deleted, the bot notices and
   reposts a fresh one on the next update.
 - The dashboard refreshes automatically whenever someone uses `/ready`,
   `/set-ready`, or the ready buttons (on `/status` or the dashboard itself);
-  when the week advances (`/advance`) or is set (`/set-week`); when a reminder
-  runs; and on startup.
+  when the week advances (`/advance` or the dashboard **Advance Week** button)
+  or is set (`/set-week`); when a reminder runs; and on startup.
 
 When `STATUS_CHANNEL_ID` is **unset**, the dashboard is not maintained and the
 recurring reminders are skipped (a warning is logged) — everything else works as

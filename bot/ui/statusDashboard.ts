@@ -7,6 +7,8 @@ import type {
 import type { ReadySummary } from "@/lib/types";
 import {
   buildReadyButtonRow,
+  ADVANCE_EMOJI,
+  DASHBOARD_ADVANCE_BUTTON_IDS,
   DASHBOARD_BUTTON_IDS,
   formatDeadline,
 } from "@/bot/ui/readyMessage";
@@ -40,12 +42,38 @@ function formatTeamList(
 }
 
 /**
+ * Build the commissioner-only **Advance Week** button row shown on the
+ * persistent dashboard. The button itself is visible to everyone (Discord has
+ * no per-viewer component rendering on a shared message), but the click handler
+ * gates the action behind {@link isCommissioner}: non-commissioners are turned
+ * away with an ephemeral note, and commissioners get a confirmation prompt
+ * before anything advances. Rendered as a green Success button to stand apart
+ * from the neutral ready-check controls above it.
+ */
+async function buildAdvanceButtonRow(): Promise<ActionRowBuilder<ButtonBuilder>> {
+  const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import(
+    /* webpackIgnore: true */ "discord.js"
+  );
+
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(DASHBOARD_ADVANCE_BUTTON_IDS.advance)
+      .setLabel("Advance Week")
+      .setEmoji(ADVANCE_EMOJI)
+      .setStyle(ButtonStyle.Success),
+  );
+}
+
+/**
  * Build the persistent status-dashboard message shown in the configured
  * `STATUS_CHANNEL_ID` channel. It mirrors `/status` but with a two-column
  * ready/not-ready layout, and carries the same **Mark Ready / Mark Not Ready /
  * Refresh** buttons so members can act on it directly. The buttons use a
  * dashboard-specific id namespace ({@link DASHBOARD_BUTTON_IDS}) so the shared
  * handler re-renders this layout (not the `/status` one) when they are clicked.
+ * A second row adds a commissioner-only green **Advance Week** button
+ * ({@link DASHBOARD_ADVANCE_BUTTON_IDS}) that runs the `/advance` flow after a
+ * confirmation prompt.
  *
  * The deadline renders as a native Discord timestamp, so "time remaining"
  * updates on its own in every viewer's client without the bot re-editing the
@@ -97,6 +125,7 @@ export async function buildStatusDashboardMessage(
   const row: ActionRowBuilder<ButtonBuilder> = await buildReadyButtonRow(
     DASHBOARD_BUTTON_IDS,
   );
+  const advanceRow: ActionRowBuilder<ButtonBuilder> = await buildAdvanceButtonRow();
 
-  return { embeds: [embed], components: [row] };
+  return { embeds: [embed], components: [row, advanceRow] };
 }

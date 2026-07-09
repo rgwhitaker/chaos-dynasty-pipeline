@@ -155,7 +155,7 @@ function attachLifecycleListeners(
 
 async function createDiscordClient(): Promise<DiscordClient> {
   const { Client, Events, GatewayIntentBits } = await getDiscordRuntime();
-  const { commandMap, handleReadyButton } = await import("@/bot/commands");
+  const { commandMap, handleAdvanceButton, handleReadyButton } = await import("@/bot/commands");
 
   const client = new Client({
     intents: [GatewayIntentBits.Guilds],
@@ -189,6 +189,11 @@ async function createDiscordClient(): Promise<DiscordClient> {
       }
 
       if (interaction.isButton()) {
+        // Commissioner-only Advance flow takes priority; fall through to the
+        // shared ready-status buttons when it isn't one of those.
+        if (await handleAdvanceButton(interaction)) {
+          return;
+        }
         await handleReadyButton(interaction);
         return;
       }
