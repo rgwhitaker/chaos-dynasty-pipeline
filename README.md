@@ -81,7 +81,7 @@ The core weekly coordination flow lives in `bot/`:
 - `bot/commands/` – slash commands built with `SlashCommandBuilder`:
   - `/ready [ready:true|false]` – mark **your** team ready (or not ready) for the current week. Only users linked to a team may use it.
   - `/status` – show the current week and which teams are ready / not ready.
-  - `/advance [deadline_hours]` – advance to the next week in the [season schedule](#season-schedule--deadlines) when enough teams are ready. Restricted to commissioners (configured role or Manage Server permission). Automatically calculates the new week's deadline (48h for game weeks, 24h otherwise); pass `deadline_hours` to override it. Posts a public announcement of the new week and deadline, then generates and posts a **Weekly Newspaper** for the week that just ended (see below).
+  - `/advance [deadline_hours]` – advance to the next week in the [season schedule](#season-schedule--deadlines) when enough teams are ready. Restricted to commissioners (configured role or Manage Server permission). Automatically calculates the new week's deadline (48h for game weeks, 24h otherwise); pass `deadline_hours` to override it. Posts a public announcement of the new week and deadline. Generating the **Weekly Newspaper** is fully manual via `/newspaper` (see below).
   - `/set-week <week> [deadline_hours]` – jump the dynasty to any week in the schedule (e.g. skip ahead to `Bowl Week 1` or reset to `Preseason`). Restricted to commissioners. The `week` option has autocomplete over the full schedule; the deadline is recalculated from the target week's default duration unless `deadline_hours` overrides it.
   - `/newspaper [week]` – manually (re)generate and post the Weekly Newspaper. Restricted to commissioners. Defaults to the most recently completed week; pass `week` to target the current or any specific week.
   - `/register <user> <team>` – link a Discord user to a team, creating the team if it doesn't exist yet. Restricted to commissioners (same permission rule as `/advance`). The `team` option has autocomplete that searches existing teams by name or abbreviation.
@@ -293,9 +293,10 @@ created before this feature are upgraded automatically when you re-run
 
 ### Weekly Newspaper
 
-After every successful `/advance`, the bot generates a **Weekly Newspaper** for
-the week that just ended and posts it to a dedicated Discord channel. It uses the
-xAI **Grok** API to write an entertaining, chaos-flavored recap.
+After a week ends, commissioners generate a **Weekly Newspaper** for it and post
+it to a dedicated Discord channel using the `/newspaper` command. It uses the
+xAI **Grok** API to write an entertaining, chaos-flavored recap. Newspaper
+generation is fully manual — `/advance` no longer generates one automatically.
 
 Each newspaper includes:
 
@@ -321,7 +322,7 @@ in Supabase for history.
 - `bot/ui/newspaperMessage.ts` – builds the Discord embed.
 - `bot/newspaper.ts` – orchestration: generate → store → post to the channel in
   `NEWSPAPER_CHANNEL_ID`. Posting is best-effort — a missing or invalid channel is
-  logged as a warning and never breaks the `/advance` flow.
+  logged as a warning and never breaks the `/newspaper` flow.
 
 ### Configuration
 
@@ -336,9 +337,10 @@ Run [`supabase/schema.sql`](supabase/schema.sql) to create the `newspapers`
 table (it is idempotent, so re-running it on an existing database just adds the
 new table).
 
-### Manual regeneration
+### Manual generation
 
-Commissioners can regenerate and re-post at any time with `/newspaper`:
+Commissioners generate and post (or re-post) a newspaper at any time with
+`/newspaper`:
 
 ```text
 /newspaper                 # most recently completed week
