@@ -61,10 +61,7 @@ export const advanceCommand: BotCommand = {
 
     try {
       const store = getReadyStore();
-      const result = await store.advanceWeek({
-        ...(deadlineOverrideHours ? { deadlineOverrideHours } : {}),
-        ...(force ? { force } : {}),
-      });
+      const result = await store.advanceWeek({ deadlineOverrideHours, force });
 
       if (!result.advanced) {
         // Already at the end of the schedule — there is nowhere left to go.
