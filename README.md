@@ -97,7 +97,7 @@ The core weekly coordination flow lives in `bot/`:
 - `bot/store/supabaseReadyStore.ts` – `SupabaseReadyStore`, the persistent implementation of `ReadyStore` backed by Supabase (`teams`, `dynasty_state`, `team_ready_states`).
 - `lib/weekSchedule.ts` – the full ordered [season schedule](#season-schedule--deadlines) (week names + `isGameWeek` / `defaultDurationHours` metadata) plus deadline-calculation helpers shared by the store and commands.
 - `lib/supabase/service.ts` – service-role Supabase client used by the bot (server-side only).
-- `bot/ui/readyMessage.ts` – builds the status embed and the **Mark Ready / Mark Not Ready / Refresh** buttons.
+- `bot/ui/readyMessage.ts` – builds the status embed and the reusable **Mark Ready / Mark Not Ready / Refresh** button row (shared by `/status` and the persistent dashboard).
 - `bot/config.ts` – reads league configuration from the environment.
 
 ### Configuration
@@ -206,12 +206,22 @@ gateway connection is ready):
 - It shows the current **week name**, the **time remaining** until the deadline
   (as a native Discord timestamp, so the countdown updates on its own in every
   viewer's client), and the **ready vs. not-ready** teams with ✅ / ⛔ markers.
+- The dashboard carries the same interactive **Mark Ready / Mark Not Ready /
+  Refresh** buttons as `/status`, so members can check in without running a
+  command. **Refresh** re-renders the message for anyone; the **Mark Ready /
+  Mark Not Ready** buttons only work for users linked to a team (others get an
+  ephemeral note asking a commissioner to link them). Each click updates the
+  ready status in the database, edits the dashboard in place, and sends the
+  clicker an ephemeral confirmation. The button handlers live on the client's
+  global interaction listener, so they keep working across bot restarts with no
+  re-registration.
 - The message id is stored in `bot_state` (`status_message_id`), so the same
   message is re-edited across restarts. If it is deleted, the bot notices and
   reposts a fresh one on the next update.
 - The dashboard refreshes automatically whenever someone uses `/ready`,
-  `/set-ready`, or the ready buttons; when the week advances (`/advance`) or is
-  set (`/set-week`); when a reminder runs; and on startup.
+  `/set-ready`, or the ready buttons (on `/status` or the dashboard itself);
+  when the week advances (`/advance`) or is set (`/set-week`); when a reminder
+  runs; and on startup.
 
 When `STATUS_CHANNEL_ID` is **unset**, the dashboard is not maintained and the
 recurring reminders are skipped (a warning is logged) — everything else works as

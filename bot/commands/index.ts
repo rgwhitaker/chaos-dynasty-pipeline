@@ -15,7 +15,13 @@ import { statusCommand } from "@/bot/commands/status";
 import { unlinkCommand } from "@/bot/commands/unlink";
 import { updateStatusDashboard } from "@/bot/statusDashboard";
 import { getReadyStore } from "@/bot/store/readyStore";
-import { buildReadyStatusMessage, READY_BUTTON_IDS } from "@/bot/ui/readyMessage";
+import {
+  buildReadyStatusMessage,
+  DASHBOARD_BUTTON_IDS,
+  READY_BUTTON_IDS,
+  type ReadyButtonIds,
+} from "@/bot/ui/readyMessage";
+import { buildStatusDashboardMessage } from "@/bot/ui/statusDashboard";
 
 /** All slash commands the bot exposes. */
 export const commands: BotCommand[] = [
@@ -45,23 +51,45 @@ export function getCommandPayloads() {
 }
 
 /**
- * Handle the ready-status buttons. Returns true when the interaction was handled
- * so the client can fall through to other button handlers otherwise.
+ * Handle the ready-status buttons. The same three actions (mark ready, mark not
+ * ready, refresh) back two surfaces: the ephemeral `/status` reply and the
+ * single shared persistent status dashboard message. Each surface uses its own
+ * custom-id namespace ({@link READY_BUTTON_IDS} / {@link DASHBOARD_BUTTON_IDS})
+ * so this handler can re-render the clicked message with its matching layout,
+ * while sharing all of the underlying store logic.
+ *
+ * Because interactions are dispatched by custom id from the client's global
+ * `InteractionCreate` listener (not per-message collectors), the dashboard
+ * buttons keep working after a bot restart with no extra re-registration.
+ *
+ * Returns true when the interaction was handled so the client can fall through
+ * to other button handlers otherwise.
  */
 export async function handleReadyButton(interaction: ButtonInteraction): Promise<boolean> {
   const { customId } = interaction;
-  if (!Object.values(READY_BUTTON_IDS).includes(customId as never)) {
+
+  const isReadyButton = Object.values(READY_BUTTON_IDS).includes(customId as never);
+  const isDashboardButton = Object.values(DASHBOARD_BUTTON_IDS).includes(customId as never);
+  if (!isReadyButton && !isDashboardButton) {
     return false;
   }
 
   const store = getReadyStore();
 
+  // Pick the id set + renderer for whichever surface was clicked. When acting
+  // from the dashboard message itself, editing the reply already updates the
+  // shared dashboard, so there is no separate dashboard to sync afterwards.
+  const ids: ReadyButtonIds = isDashboardButton ? DASHBOARD_BUTTON_IDS : READY_BUTTON_IDS;
+  const buildMessage = isDashboardButton
+    ? buildStatusDashboardMessage
+    : buildReadyStatusMessage;
+
   // The refresh button just re-renders the current status for everyone.
-  if (customId === READY_BUTTON_IDS.refresh) {
+  if (customId === ids.refresh) {
     await interaction.deferUpdate();
     try {
       const summary = await store.getReadySummary();
-      const message = await buildReadyStatusMessage(summary);
+      const message = await buildMessage(summary);
       await interaction.editReply(message);
     } catch (error) {
       console.error("[ready-button] Failed to refresh status", error);
@@ -73,7 +101,9 @@ export async function handleReadyButton(interaction: ButtonInteraction): Promise
     return true;
   }
 
-  // Mark/unmark buttons require a linked team (same rule as `/ready`).
+  // Mark/unmark buttons require a linked team (same rule as `/ready`). On the
+  // shared dashboard message all members see these buttons, so unlinked users
+  // are turned away here with an ephemeral note instead of being able to act.
   let team;
   try {
     team = await store.getTeamByDiscordUserId(interaction.user.id);
@@ -98,16 +128,19 @@ export async function handleReadyButton(interaction: ButtonInteraction): Promise
 
   await interaction.deferUpdate();
   try {
-    const wantsReady = customId === READY_BUTTON_IDS.markReady;
+    const wantsReady = customId === ids.markReady;
     await store.setReadyStatus(team.id, wantsReady ? "READY" : "NOT_READY", interaction.user.id);
 
     const summary = await store.getReadySummary();
-    const message = await buildReadyStatusMessage(summary);
-    // Update the shared status message in place so everyone sees the change.
+    const message = await buildMessage(summary);
+    // Update the message the button lives on in place so everyone sees the change.
     await interaction.editReply(message);
 
-    // Keep the persistent status dashboard in sync with this change.
-    await updateStatusDashboard(interaction.client);
+    // From an ephemeral `/status` reply we still need to sync the separate
+    // persistent dashboard; from the dashboard itself the edit above already did.
+    if (!isDashboardButton) {
+      await updateStatusDashboard(interaction.client);
+    }
   } catch (error) {
     console.error("[ready-button] Failed to update ready status", error);
     await interaction.followUp({
