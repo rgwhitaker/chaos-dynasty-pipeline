@@ -177,10 +177,11 @@ export async function postAdvanceAnnouncements(
     // Public announcement, mass-tagging the whole league.
     const payload = await buildAdvanceReplyPayload(result);
     const { mention, allowedMentions } = buildMassTag();
+    const announcement = payload.content ? `${mention}\n${payload.content}` : mention;
     await channel.send({
       embeds: payload.embeds,
       components: payload.components,
-      content: `${mention}\n${payload.content ?? ""}`,
+      content: announcement,
       allowedMentions,
     } as MessageCreateOptions);
 
