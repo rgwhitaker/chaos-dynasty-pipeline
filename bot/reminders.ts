@@ -1,14 +1,14 @@
 import type { Client } from "discord.js";
 import { fetchSendableTextChannel } from "@/bot/channels";
-import { getStatusChannelId } from "@/bot/config";
+import { getReminderChannelId } from "@/bot/config";
 import { logBot, logError, logWarn } from "@/bot/logger";
 import { getReadyStore } from "@/bot/store/readyStore";
 import { formatDeadline } from "@/bot/ui/readyMessage";
 
 /**
- * Post a single reminder to the configured status channel mentioning every team
- * that is still **not ready** for the current week, along with the week name and
- * deadline.
+ * Post a single reminder to the configured reminder channel mentioning every
+ * team that is still **not ready** for the current week, along with the week
+ * name and deadline.
  *
  * Only not-ready teams that are linked to a Discord user are mentioned, and the
  * reminder is skipped entirely when everyone is ready — so it never spams a
@@ -16,10 +16,10 @@ import { formatDeadline } from "@/bot/ui/readyMessage";
  * returns the number of teams that were reminded (0 when skipped).
  */
 export async function sendNotReadyReminder(client: Client): Promise<number> {
-  const channelId = getStatusChannelId();
+  const channelId = getReminderChannelId();
   if (!channelId) {
     logWarn(
-      "STATUS_CHANNEL_ID is not set; skipping the recurring not-ready reminder.",
+      "Neither REMINDER_CHANNEL_ID nor STATUS_CHANNEL_ID is set; skipping the recurring not-ready reminder.",
     );
     return 0;
   }
@@ -42,7 +42,7 @@ export async function sendNotReadyReminder(client: Client): Promise<number> {
     const channel = await fetchSendableTextChannel(client, channelId);
     if (!channel) {
       logWarn(
-        `STATUS_CHANNEL_ID (${channelId}) is not a text channel the bot can post to.`,
+        `Reminder channel (${channelId}) is not a text channel the bot can post to.`,
       );
       return 0;
     }

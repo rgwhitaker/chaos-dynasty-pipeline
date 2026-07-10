@@ -115,7 +115,8 @@ The core weekly coordination flow lives in `bot/`:
 | `XAI_API_KEY` | xAI Grok API key (required to generate newspapers) | none |
 | `NEWSPAPER_CHANNEL_ID` | Discord channel id the Weekly Newspaper is posted to | none |
 | `NEWSPAPER_IMAGE_URL` | Optional image shown as the newspaper embed thumbnail | none |
-| `STATUS_CHANNEL_ID` | Channel for the persistent status dashboard + recurring reminders | none |
+| `STATUS_CHANNEL_ID` | Channel for the persistent status dashboard (and reminders, unless `REMINDER_CHANNEL_ID` is set) | none |
+| `REMINDER_CHANNEL_ID` | Channel for the recurring "not ready" reminders (falls back to `STATUS_CHANNEL_ID`) | none |
 
 When `NEXT_PUBLIC_SUPABASE_URL` **and** `SUPABASE_SERVICE_ROLE_KEY` are set,
 `getReadyStore()` uses the persistent `SupabaseReadyStore`. Otherwise it falls
@@ -187,6 +188,10 @@ gateway connection is ready):
 
 **Recurring reminders (every 12 hours, anchored on the last advance)**
 
+- Reminders post to `REMINDER_CHANNEL_ID` when set, so you can keep them in a
+  dedicated channel separate from the status dashboard. When
+  `REMINDER_CHANNEL_ID` is unset they fall back to `STATUS_CHANNEL_ID`; when
+  neither is set, reminders are skipped.
 - The first reminder for a week fires **12 hours after the week was advanced**
   (`/advance` or the dashboard **Advance Week** button), not on a fixed global
   clock. After that, reminders **recur every 12 hours** until the next advance.
@@ -237,9 +242,9 @@ gateway connection is ready):
   when the week advances (`/advance` or the dashboard **Advance Week** button)
   or is set (`/set-week`); when a reminder runs; and on startup.
 
-When `STATUS_CHANNEL_ID` is **unset**, the dashboard is not maintained and the
-recurring reminders are skipped (a warning is logged) — everything else works as
-before.
+When `STATUS_CHANNEL_ID` is **unset**, the dashboard is not maintained. Reminders
+post to `REMINDER_CHANNEL_ID` if it is set; when both are unset, the recurring
+reminders are skipped (a warning is logged) — everything else works as before.
 
 ### Supabase setup
 
