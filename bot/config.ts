@@ -80,12 +80,13 @@ export function getStatusChannelId(): string | undefined {
 
 /**
  * The Discord channel id where the public "week advanced" announcement (with its
- * mass tag) is posted. Falls back to {@link getStatusChannelId} when unset so a
- * single-channel setup works out of the box; when neither is set, the announcement
- * is posted in the channel the advance was triggered from.
+ * mass tag) is posted. Only `ANNOUNCE_CHANNEL_ID` is used — it intentionally does
+ * *not* fall back to the status channel so mass-tag messages never land in the
+ * status dashboard channel. When unset, the announcement is posted in the channel
+ * the advance was triggered from.
  */
 export function getAnnounceChannelId(): string | undefined {
-  return process.env.ANNOUNCE_CHANNEL_ID?.trim() || getStatusChannelId();
+  return process.env.ANNOUNCE_CHANNEL_ID?.trim() || undefined;
 }
 
 /**

@@ -143,9 +143,10 @@ function buildMassTag(): { mention: string; allowedMentions: Record<string, unkn
  * commissioners so they know they can safely force the advance in-game.
  *
  * The announcement is posted to the configured announce channel (falling back to
- * the status channel, then to `fallbackChannel` — usually the channel the
- * advance was triggered from). Best-effort: it logs and swallows errors so a
- * failed announcement never breaks the advance flow.
+ * `fallbackChannel` — usually the channel the advance was triggered from — when
+ * `ANNOUNCE_CHANNEL_ID` is unset). It never falls back to the status channel.
+ * Best-effort: it logs and swallows errors so a failed announcement never breaks
+ * the advance flow.
  */
 export async function postAdvanceAnnouncements(
   client: Client,

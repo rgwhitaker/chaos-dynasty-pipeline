@@ -117,7 +117,7 @@ The core weekly coordination flow lives in `bot/`:
 | `NEWSPAPER_CHANNEL_ID` | Discord channel id the Weekly Newspaper is posted to | none |
 | `NEWSPAPER_IMAGE_URL` | Optional image shown as the newspaper embed thumbnail | none |
 | `STATUS_CHANNEL_ID` | Channel for the persistent status dashboard + recurring reminders | none |
-| `ANNOUNCE_CHANNEL_ID` | Channel the public "week advanced" announcement is posted to | falls back to `STATUS_CHANNEL_ID` |
+| `ANNOUNCE_CHANNEL_ID` | Channel the public "week advanced" announcement (mass-tag) is posted to | channel the advance was triggered from |
 
 When `NEXT_PUBLIC_SUPABASE_URL` **and** `SUPABASE_SERVICE_ROLE_KEY` are set,
 `getReadyStore()` uses the persistent `SupabaseReadyStore`. Otherwise it falls
