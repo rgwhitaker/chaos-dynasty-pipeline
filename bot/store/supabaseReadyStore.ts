@@ -502,6 +502,8 @@ export class SupabaseReadyStore implements ReadyStore {
 
     // The advance is "forced" when it only happened because of the override.
     const forced = force && !summary.canAdvance;
+    // Whether every team was already marked ready when we advanced.
+    const everyoneReady = summary.totalCount > 0 && summary.readyCount === summary.totalCount;
 
     const nextWeek = previousWeek + 1;
 
@@ -523,6 +525,7 @@ export class SupabaseReadyStore implements ReadyStore {
       deadline: nextState.deadline,
       atLastWeek: false,
       forced,
+      everyoneReady,
       summary: nextSummary,
     };
   }
