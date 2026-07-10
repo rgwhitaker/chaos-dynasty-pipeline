@@ -21,25 +21,41 @@ const globalForScheduler = globalThis as typeof globalThis & {
 };
 
 /**
- * Decide whether a reminder is due and, if so, send it. Resilience across
- * restarts comes from persisting `last_reminder_at`: on the very first run we
- * only record a baseline (so a fresh deploy doesn't immediately ping everyone),
- * and on subsequent ticks we compare against the persisted timestamp — which is
- * unaffected by restarts when Supabase is configured.
+ * Decide whether a reminder is due and, if so, send it.
+ *
+ * The 12h window is anchored on the **last advance** (persisted as
+ * `last_advance_at`): the first reminder for a week fires 12h after that week
+ * was advanced to, and subsequent recurring reminders fire every 12h after the
+ * previous reminder. We therefore anchor on the most recent of `last_advance_at`
+ * and `last_reminder_at`.
+ *
+ * Resilience across restarts comes from persisting both timestamps in Supabase,
+ * so a redeploy mid-window resumes the schedule instead of resetting it. Before
+ * any advance or reminder has been recorded we only set a baseline (so a fresh
+ * deploy doesn't immediately ping everyone).
  */
 async function runReminderTick(client: Client): Promise<void> {
   const stateStore = getBotStateStore();
-  const lastReminderAt = await stateStore.getLastReminderAt();
+  const [lastAdvanceAt, lastReminderAt] = await Promise.all([
+    stateStore.getLastAdvanceAt(),
+    stateStore.getLastReminderAt(),
+  ]);
   const now = Date.now();
 
-  if (!lastReminderAt) {
-    // First ever run: set a baseline so the 12h window starts now.
+  // Anchor on whichever happened most recently: advancing resets the window so
+  // the first reminder is 12h after the advance, while a sent reminder moves the
+  // window forward so reminders keep recurring every 12h.
+  const anchor = mostRecentTimestamp(lastAdvanceAt, lastReminderAt);
+
+  if (anchor === undefined) {
+    // No advance or reminder recorded yet: set a baseline so the 12h window
+    // starts now instead of pinging immediately on a fresh deploy.
     await stateStore.setLastReminderAt(new Date(now).toISOString());
     return;
   }
 
-  const elapsed = now - Date.parse(lastReminderAt);
-  if (Number.isNaN(elapsed) || elapsed < REMINDER_INTERVAL_MS) {
+  const elapsed = now - anchor;
+  if (elapsed < REMINDER_INTERVAL_MS) {
     return;
   }
 
@@ -49,6 +65,20 @@ async function runReminderTick(client: Client): Promise<void> {
   await stateStore.setLastReminderAt(new Date(now).toISOString());
   // Refresh the dashboard so its state matches the reminder that just went out.
   await updateStatusDashboard(client);
+}
+
+/**
+ * Return the most recent (largest) of the given ISO timestamps in epoch ms,
+ * ignoring any that are missing or unparseable. Returns `undefined` when none
+ * are usable.
+ */
+function mostRecentTimestamp(...isoTimes: (string | undefined)[]): number | undefined {
+  const parsed = isoTimes
+    .filter((iso): iso is string => Boolean(iso))
+    .map((iso) => Date.parse(iso))
+    .filter((ms) => !Number.isNaN(ms));
+
+  return parsed.length > 0 ? Math.max(...parsed) : undefined;
 }
 
 /**

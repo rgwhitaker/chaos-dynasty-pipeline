@@ -30,6 +30,11 @@ export interface BotStateStore {
   /** Forget the persistent status-dashboard message (e.g. it was deleted). */
   clearStatusMessageRef(): Promise<void>;
 
+  /** ISO timestamp of the last week advance, if one has happened. */
+  getLastAdvanceAt(): Promise<string | undefined>;
+  /** Record when the week was last advanced (anchors the reminder window). */
+  setLastAdvanceAt(iso: string): Promise<void>;
+
   /** ISO timestamp of the last recurring reminder, if one has run. */
   getLastReminderAt(): Promise<string | undefined>;
   /** Record when the recurring reminder last ran. */
@@ -43,11 +48,12 @@ interface BotStateRow {
   dynasty_id: string;
   status_channel_id: string | null;
   status_message_id: string | null;
+  last_advance_at: string | null;
   last_reminder_at: string | null;
 }
 
 const BOT_STATE_COLUMNS =
-  "dynasty_id, status_channel_id, status_message_id, last_reminder_at";
+  "dynasty_id, status_channel_id, status_message_id, last_advance_at, last_reminder_at";
 
 /**
  * In-memory bot-state store used when Supabase credentials are absent. State
@@ -56,6 +62,7 @@ const BOT_STATE_COLUMNS =
  */
 export class InMemoryBotStateStore implements BotStateStore {
   private statusMessageRef?: StatusMessageRef;
+  private lastAdvanceAt?: string;
   private lastReminderAt?: string;
 
   async getStatusMessageRef(): Promise<StatusMessageRef | undefined> {
@@ -68,6 +75,14 @@ export class InMemoryBotStateStore implements BotStateStore {
 
   async clearStatusMessageRef(): Promise<void> {
     this.statusMessageRef = undefined;
+  }
+
+  async getLastAdvanceAt(): Promise<string | undefined> {
+    return this.lastAdvanceAt;
+  }
+
+  async setLastAdvanceAt(iso: string): Promise<void> {
+    this.lastAdvanceAt = iso;
   }
 
   async getLastReminderAt(): Promise<string | undefined> {
@@ -134,6 +149,15 @@ export class SupabaseBotStateStore implements BotStateStore {
 
   async clearStatusMessageRef(): Promise<void> {
     await this.upsert({ status_channel_id: null, status_message_id: null });
+  }
+
+  async getLastAdvanceAt(): Promise<string | undefined> {
+    const row = await this.fetchRow();
+    return row?.last_advance_at ?? undefined;
+  }
+
+  async setLastAdvanceAt(iso: string): Promise<void> {
+    await this.upsert({ last_advance_at: iso });
   }
 
   async getLastReminderAt(): Promise<string | undefined> {

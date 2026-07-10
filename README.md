@@ -185,19 +185,21 @@ When `STATUS_CHANNEL_ID` is set to a channel the bot can post in, two background
 features come online (both driven by `bot/scheduler.ts`, which starts once the
 gateway connection is ready):
 
-**Recurring reminders (every 12 hours)**
+**Recurring reminders (every 12 hours, anchored on the last advance)**
 
-- Every 12 hours the bot posts a single reminder to `STATUS_CHANNEL_ID` that
-  `@`-mentions only the teams still **not ready** for the current week, along with
-  the week name and deadline.
+- The first reminder for a week fires **12 hours after the week was advanced**
+  (`/advance` or the dashboard **Advance Week** button), not on a fixed global
+  clock. After that, reminders **recur every 12 hours** until the next advance.
 - It never spams: if every linked team is already ready, the reminder is skipped
   entirely, and only not-ready owners are pinged (via scoped `allowedMentions`).
-- The cadence is **resilient across restarts**. The last reminder time is
-  persisted in the `bot_state` table, and a lightweight scheduler tick (every 30
-  minutes) compares against it — so a redeploy in the middle of the window
-  resumes the schedule instead of resetting it. On a brand-new dynasty the first
-  run only records a baseline, so a fresh deploy never immediately pings everyone.
-  (With the in-memory fallback — no Supabase — the cadence resets on restart.)
+- The cadence is **resilient across restarts**. Both the last advance time and
+  the last reminder time are persisted in the `bot_state` table
+  (`last_advance_at` / `last_reminder_at`), and a lightweight scheduler tick
+  (every 30 minutes) compares against them — so a redeploy in the middle of the
+  window resumes the schedule instead of resetting it. On a brand-new dynasty
+  (no advance yet) the first run only records a baseline, so a fresh deploy never
+  immediately pings everyone. (With the in-memory fallback — no Supabase — the
+  cadence resets on restart.)
 
 **Persistent status dashboard**
 
