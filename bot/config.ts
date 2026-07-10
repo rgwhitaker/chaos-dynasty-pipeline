@@ -78,6 +78,17 @@ export function getStatusChannelId(): string | undefined {
 }
 
 /**
+ * The Discord channel id that receives the recurring "not ready" reminders.
+ * Set `REMINDER_CHANNEL_ID` to post reminders to a dedicated channel, separate
+ * from the status dashboard. When unset, it falls back to `STATUS_CHANNEL_ID`
+ * for backward compatibility; when neither is set, reminders are skipped (a
+ * warning is logged).
+ */
+export function getReminderChannelId(): string | undefined {
+  return process.env.REMINDER_CHANNEL_ID?.trim() || getStatusChannelId();
+}
+
+/**
  * Whether the bot should attempt to start/log in. Defaults to disabled so the
  * Next.js app can run (build, preview, tests) without Discord credentials.
  */

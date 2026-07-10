@@ -115,15 +115,22 @@ create index if not exists box_scores_dynasty_week_idx
 -- survive restarts:
 --   * `status_channel_id` / `status_message_id` — the single persistent status
 --     dashboard message (edited in place instead of reposting each update).
+--   * `last_advance_at` — when the week was last advanced, which anchors the
+--     recurring reminder window (reminders fire 12h after the last advance).
 --   * `last_reminder_at` — when the recurring "not ready" reminder last ran, so
---     the 12h cadence is preserved across restarts.
+--     the 12h cadence keeps recurring and is preserved across restarts.
 create table if not exists public.bot_state (
   dynasty_id        text primary key default 'default',
   status_channel_id text,
   status_message_id text,
+  last_advance_at   timestamptz,
   last_reminder_at  timestamptz,
   updated_at        timestamptz not null default now()
 );
+
+-- Backfill for existing databases created before `last_advance_at` was added.
+alter table public.bot_state
+  add column if not exists last_advance_at timestamptz;
 
 -- Row level security ----------------------------------------------------------
 -- The Discord bot talks to Supabase with the service role key, which bypasses

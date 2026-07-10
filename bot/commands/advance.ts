@@ -4,6 +4,7 @@ import type { BotCommand } from "@/bot/commands/types";
 import { getLeagueConfig } from "@/bot/config";
 import { isCommissioner } from "@/bot/permissions";
 import { updateStatusDashboard } from "@/bot/statusDashboard";
+import { getBotStateStore } from "@/bot/store/botStateStore";
 import { getReadyStore } from "@/bot/store/readyStore";
 import type { AdvanceOptions } from "@/bot/store/readyStore";
 import { MS_PER_HOUR } from "@/bot/time";
@@ -87,6 +88,15 @@ export async function executeAdvance(
   const payload = await buildAdvanceReplyPayload(result);
 
   if (result.advanced) {
+    // Anchor the recurring reminder window on this advance so the next reminder
+    // fires 12h from now (not on a fixed global schedule). Persisted so the
+    // timing survives bot restarts. Best-effort — never block the advance.
+    try {
+      await getBotStateStore().setLastAdvanceAt(new Date().toISOString());
+    } catch (error) {
+      console.error("[advance] Failed to record last advance time", error);
+    }
+
     // Best-effort — the updater never throws.
     await updateStatusDashboard(client);
   }
