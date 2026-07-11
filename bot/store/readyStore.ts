@@ -512,6 +512,8 @@ export class InMemoryReadyStore implements ReadyStore {
 
     // The advance is "forced" when it only happened because of the override.
     const forced = force && !summary.canAdvance;
+    // Whether every team was already marked ready when we advanced.
+    const everyoneReady = summary.totalCount > 0 && summary.readyCount === summary.totalCount;
 
     // Move to the next week and reset readiness so the new week starts clean.
     const nextWeek = previousWeek + 1;
@@ -538,6 +540,7 @@ export class InMemoryReadyStore implements ReadyStore {
       deadline: nextState.deadline,
       atLastWeek: false,
       forced,
+      everyoneReady,
       summary: nextSummary,
     };
   }

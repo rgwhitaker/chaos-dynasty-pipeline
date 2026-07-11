@@ -1,7 +1,15 @@
 import { SlashCommandBuilder } from "discord.js";
-import type { ChatInputCommandInteraction, Client, InteractionReplyOptions } from "discord.js";
+import type {
+  ChatInputCommandInteraction,
+  Client,
+  InteractionReplyOptions,
+  MessageCreateOptions,
+} from "discord.js";
+import { buildAdvanceConfirmRow } from "@/bot/commands/advanceButton";
 import type { BotCommand } from "@/bot/commands/types";
-import { getLeagueConfig } from "@/bot/config";
+import { fetchSendableTextChannel } from "@/bot/channels";
+import { getAnnounceChannelId, getLeagueConfig } from "@/bot/config";
+import { logError } from "@/bot/logger";
 import { isCommissioner } from "@/bot/permissions";
 import { updateStatusDashboard } from "@/bot/statusDashboard";
 import { getBotStateStore } from "@/bot/store/botStateStore";
@@ -10,6 +18,26 @@ import type { AdvanceOptions } from "@/bot/store/readyStore";
 import { MS_PER_HOUR } from "@/bot/time";
 import { buildReadyStatusMessage, formatDeadline } from "@/bot/ui/readyMessage";
 import type { AdvanceResult } from "@/lib/types";
+
+/**
+ * A minimal channel we can post the public advance announcement to. Both the
+ * dashboard button's interaction channel and a fetched announce channel satisfy
+ * this, so the announcement helper can accept either.
+ */
+type SendableChannel = { send: (options: MessageCreateOptions) => Promise<unknown> };
+
+/** Narrow an unknown channel to something we can `.send()` an announcement to. */
+function asSendableChannel(channel: unknown): SendableChannel | undefined {
+  if (
+    channel &&
+    typeof channel === "object" &&
+    "send" in channel &&
+    typeof (channel as SendableChannel).send === "function"
+  ) {
+    return channel as SendableChannel;
+  }
+  return undefined;
+}
 
 /** Bounds for the optional deadline override (in hours). */
 const MIN_DEADLINE_HOURS = 1;
@@ -47,9 +75,8 @@ export async function buildAdvanceReplyPayload(
     const message = await buildReadyStatusMessage(summary);
     return {
       content:
-        `Not enough teams are ready to advance ${summary.weekName} ` +
-        `(${summary.readyCount}/${summary.requiredCount}). ` +
-        "Re-run with `force: true` to advance anyway.",
+        `The week could not be advanced right now for ${summary.weekName} ` +
+        `(${summary.readyCount}/${summary.totalCount} ready). Please try again shortly.`,
       ...message,
     };
   }
@@ -105,8 +132,89 @@ export async function executeAdvance(
 }
 
 /**
- * `/advance` — advance the league to the next week once enough teams are ready.
- * Restricted to commissioners (configured role or Manage Server permission).
+ * Build the mass-tag mention (and matching `allowedMentions`) used to ping the
+ * whole league in the public advance announcement. Uses the configured league
+ * role when set, otherwise falls back to `@everyone`.
+ */
+function buildMassTag(): { mention: string; allowedMentions: Record<string, unknown> } {
+  const { leagueRoleId } = getLeagueConfig();
+  if (leagueRoleId) {
+    return {
+      mention: `<@&${leagueRoleId}>`,
+      allowedMentions: { roles: [leagueRoleId] },
+    };
+  }
+  return { mention: "@everyone", allowedMentions: { parse: ["everyone"] } };
+}
+
+/**
+ * Post the public "week advanced" announcement (mass-tagging the whole league)
+ * and, when every team was already marked ready, a separate heads-up to the
+ * commissioners so they know they can safely force the advance in-game.
+ *
+ * The announcement is posted to the configured announce channel (falling back to
+ * `fallbackChannel` — usually the channel the advance was triggered from — when
+ * `ANNOUNCE_CHANNEL_ID` is unset). It never falls back to the status channel.
+ * Best-effort: it logs and swallows errors so a failed announcement never breaks
+ * the advance flow.
+ */
+export async function postAdvanceAnnouncements(
+  client: Client,
+  result: AdvanceResult,
+  fallbackChannel?: unknown,
+): Promise<void> {
+  if (!result.advanced) {
+    return;
+  }
+
+  try {
+    const config = getLeagueConfig();
+    const channelId = getAnnounceChannelId();
+
+    // Prefer the configured announce channel; otherwise post wherever the
+    // advance was triggered from.
+    let channel: SendableChannel | undefined;
+    if (channelId) {
+      channel = asSendableChannel(await fetchSendableTextChannel(client, channelId));
+    }
+    if (!channel) {
+      channel = asSendableChannel(fallbackChannel);
+    }
+    if (!channel) {
+      logError("Advance announcement skipped: no sendable announce channel could be resolved.");
+      return;
+    }
+
+    // Public announcement, mass-tagging the whole league.
+    const payload = await buildAdvanceReplyPayload(result);
+    const { mention, allowedMentions } = buildMassTag();
+    const announcement = payload.content ? `${mention}\n${payload.content}` : mention;
+    await channel.send({
+      embeds: payload.embeds,
+      components: payload.components,
+      content: announcement,
+      allowedMentions,
+    } as MessageCreateOptions);
+
+    // When everyone was already ready, ping the commissioners separately so they
+    // know they can force the advance in-game. Needs a role to tag.
+    if (result.everyoneReady && config.commissionerRoleId) {
+      await channel.send({
+        content:
+          `<@&${config.commissionerRoleId}> ✅ Every team is marked ready for ` +
+          `**${result.previousWeekName}** — you're clear to force the advance in-game.`,
+        allowedMentions: { roles: [config.commissionerRoleId] },
+      } as MessageCreateOptions);
+    }
+  } catch (error) {
+    logError("Failed to post the advance announcement", error);
+  }
+}
+
+/**
+ * `/advance` — advance the league to the next week. Restricted to commissioners
+ * (configured role or Manage Server permission). Advancing no longer requires
+ * teams to be ready: it always proceeds after a confirmation step.
  *
  * An optional `deadline_hours` overrides the automatically-calculated deadline
  * window for the new week (e.g. force 24h even on a 48h game week).
@@ -126,13 +234,6 @@ export const advanceCommand: BotCommand = {
         )
         .setMinValue(MIN_DEADLINE_HOURS)
         .setMaxValue(MAX_DEADLINE_HOURS),
-    )
-    .addBooleanOption((option) =>
-      option
-        .setName("force")
-        .setDescription(
-          "Advance even if not enough teams are marked ready (e.g. ready in-game or past deadline).",
-        ),
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
@@ -149,24 +250,20 @@ export const advanceCommand: BotCommand = {
 
     const deadlineOverrideHours =
       interaction.options.getInteger("deadline_hours") ?? undefined;
-    const force = interaction.options.getBoolean("force") ?? false;
 
-    // Defer the public reply so advancing (which touches the store) stays within
-    // Discord's response window.
-    await interaction.deferReply();
-
-    try {
-      const { payload } = await executeAdvance(interaction.client, {
-        deadlineOverrideHours,
-        force,
-      });
-      await interaction.editReply(payload);
-    } catch (error) {
-      console.error("[advance] Failed to advance the week", error);
-      await interaction.editReply({
-        content: "Sorry, I couldn't advance the week right now. Please try again shortly.",
-      });
-    }
+    // Advancing no longer requires teams to be ready, but we still guard against
+    // an accidental advance with a confirmation prompt. The shared Advance button
+    // handler runs the actual advance once Confirm is pressed; any deadline
+    // override is carried on the Confirm button's custom id.
+    const row = await buildAdvanceConfirmRow(deadlineOverrideHours);
+    await interaction.reply({
+      content:
+        "⚠️ **Advance the dynasty to the next week?**\n" +
+        "This advances regardless of who is marked ready, resets every team's ready " +
+        "status, and posts a public announcement. Use `/set-week` to move back.",
+      components: [row],
+      ephemeral: true,
+    });
   },
 };
 

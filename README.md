@@ -82,7 +82,7 @@ The core weekly coordination flow lives in `bot/`:
 - `bot/commands/` – slash commands built with `SlashCommandBuilder`:
   - `/ready [ready:true|false]` – mark **your** team ready (or not ready) for the current week. Only users linked to a team may use it.
   - `/status` – show the current week and which teams are ready / not ready.
-  - `/advance [deadline_hours]` – advance to the next week in the [season schedule](#season-schedule--deadlines) when enough teams are ready. Restricted to commissioners (configured role or Manage Server permission). Automatically calculates the new week's deadline (48h for game weeks, 24h otherwise); pass `deadline_hours` to override it. Posts a public announcement of the new week, its deadline, and when the next advance will happen (e.g. "advance again in ~48 hours"), and refreshes the [persistent status dashboard](#recurring-reminders--persistent-status-dashboard). The Weekly Newspaper is **not** generated automatically — run `/newspaper` for that.
+  - `/advance [deadline_hours]` – advance to the next week in the [season schedule](#season-schedule--deadlines). Restricted to commissioners (configured role or Manage Server permission). **Advancing no longer requires teams to be ready** — it always proceeds after a confirmation step, so a commissioner can advance at any time. Automatically calculates the new week's deadline (48h for game weeks, 24h otherwise); pass `deadline_hours` to override it. On confirmation it posts a **public announcement that mass-tags the whole league** (the configured [league role](#configuration), or `@everyone`) in the [announce channel](#configuration) with the new week, its deadline, and when the next advance will happen (e.g. "advance again in ~48 hours"), and refreshes the [persistent status dashboard](#recurring-reminders--persistent-status-dashboard). When **every** team was already marked ready, it also sends a separate heads-up to the commissioners (via `DISCORD_COMMISSIONER_ROLE_ID`) so they know they can safely force the advance in-game. The Weekly Newspaper is **not** generated automatically — run `/newspaper` for that.
   - `/set-week <week> [deadline_hours]` – jump the dynasty to any week in the schedule (e.g. skip ahead to `Bowl Week 1` or reset to `Preseason`). Restricted to commissioners. The `week` option has autocomplete over the full schedule; the deadline is recalculated from the target week's default duration unless `deadline_hours` overrides it.
   - `/newspaper [week]` – manually (re)generate and post the Weekly Newspaper. Restricted to commissioners. Defaults to the most recently completed week; pass `week` to target the current or any specific week.
   - `/register <user> <team>` – link a Discord user to a team, creating the team if it doesn't exist yet. Restricted to commissioners (same permission rule as `/advance`). The `team` option has autocomplete that searches existing teams by name or abbreviation.
@@ -109,7 +109,8 @@ The core weekly coordination flow lives in `bot/`:
 | `LEAGUE_START_WEEK` | Schedule index a fresh dynasty starts on (0 = Preseason) | `0` |
 | `LEAGUE_ADVANCE_THRESHOLD` | Ready teams required to advance, or `ALL` | `ALL` |
 | `LEAGUE_DYNASTY_ID` | Dynasty id the bot coordinates | `default` |
-| `DISCORD_COMMISSIONER_ROLE_ID` | Role allowed to run `/advance` | Manage Server permission |
+| `DISCORD_COMMISSIONER_ROLE_ID` | Role allowed to run `/advance`; also pinged after an advance when everyone was ready | Manage Server permission |
+| `DISCORD_LEAGUE_ROLE_ID` | Role mass-tagged in the public advance announcement | `@everyone` |
 | `DISCORD_TEAM_LINKS` | JSON linking Discord users to seeded teams (**in-memory fallback only**) | none |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (web app) | none |
 | `XAI_API_KEY` | xAI Grok API key (required to generate newspapers) | none |
@@ -117,6 +118,7 @@ The core weekly coordination flow lives in `bot/`:
 | `NEWSPAPER_IMAGE_URL` | Optional image shown as the newspaper embed thumbnail | none |
 | `STATUS_CHANNEL_ID` | Channel for the persistent status dashboard (and reminders, unless `REMINDER_CHANNEL_ID` is set) | none |
 | `REMINDER_CHANNEL_ID` | Channel for the recurring "not ready" reminders (falls back to `STATUS_CHANNEL_ID`) | none |
+| `ANNOUNCE_CHANNEL_ID` | Channel the public "week advanced" announcement (mass-tag) is posted to | channel the advance was triggered from |
 
 When `NEXT_PUBLIC_SUPABASE_URL` **and** `SUPABASE_SERVICE_ROLE_KEY` are set,
 `getReadyStore()` uses the persistent `SupabaseReadyStore`. Otherwise it falls
@@ -163,9 +165,10 @@ readiness, so changing weeks automatically starts every team as NOT ready.
 - `/set-week week:<name>` jumps straight to any week and recalculates its deadline
   from that week's default duration; `deadline_hours:<n>` overrides it the same
   way.
-- The new week and its deadline are announced publicly in the channel. Deadlines
-  render as native Discord timestamps, so every member sees them in their own
-  timezone with a relative "in N hours" hint.
+- The new week and its deadline are announced publicly in the announce channel,
+  mass-tagging the whole league (the configured `DISCORD_LEAGUE_ROLE_ID`, or
+  `@everyone`). Deadlines render as native Discord timestamps, so every member
+  sees them in their own timezone with a relative "in N hours" hint.
 - `/status`, `/ready`, and `/set-ready` all show the current week name and its
   deadline in the ready-check embed.
 
@@ -229,9 +232,11 @@ gateway connection is ready):
   - Clicking it opens an **ephemeral confirmation** with **Confirm Advance /
     Cancel** buttons, so an accidental click can't roll the week forward.
   - On **Confirm**, it runs the exact same logic as `/advance` (roll to the next
-    week, recalculate the deadline, reset readiness, post the public advance
-    announcement, and refresh this dashboard). The commissioner gets a short
-    ephemeral receipt; the announcement itself is posted publicly in the channel.
+    week, recalculate the deadline, reset readiness, and refresh this dashboard).
+    Advancing does **not** require any team to be ready. The clicker gets a short
+    ephemeral receipt; the announcement itself is posted publicly in the announce
+    channel, mass-tagging the whole league, and — when everyone was already ready
+    — the commissioners get a separate heads-up.
   - Like the other buttons, its handler is dispatched from the client's global
     interaction listener, so it survives bot restarts with no re-registration.
 - The message id is stored in `bot_state` (`status_message_id`), so the same
@@ -306,7 +311,7 @@ The seed provides four demo teams: `team-thunder`, `team-reign`, `team-blitz`, `
 5. In your server, try the flow:
    - `/status` – see the current week (Preseason on a fresh dynasty) with all teams NOT ready.
    - `/ready` – mark your team ready; the status message updates. Or click the **Mark Ready** button.
-   - `/advance` – as a commissioner, advance the week once the threshold is met. Ready statuses reset for the new week and its deadline is announced.
+   - `/advance` – as a commissioner, confirm the prompt to advance the week at any time (readiness is not required). Ready statuses reset for the new week, its deadline is announced with a league-wide tag, and — if everyone was ready — the commissioners get a heads-up.
 
 > With Supabase configured, state persists across restarts. Without it, the
 > in-memory fallback resets when the dev server restarts.

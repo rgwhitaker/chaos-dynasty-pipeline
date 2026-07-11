@@ -75,6 +75,11 @@ export interface LeagueConfig {
   advanceThreshold: number | null;
   /** Optional Discord role id that is allowed to run `/advance`. */
   commissionerRoleId?: string;
+  /**
+   * Optional Discord role id mass-tagged in the public advance announcement.
+   * When unset, the announcement falls back to `@everyone`.
+   */
+  leagueRoleId?: string;
 }
 
 /** A single team's readiness for the current week, joined with its team record. */
@@ -128,6 +133,11 @@ export interface AdvanceResult {
    * happened even though not enough teams were marked ready).
    */
   forced?: boolean;
+  /**
+   * True when every team was already marked ready at the moment of advancing.
+   * Used to notify commissioners they can safely force the advance in-game.
+   */
+  everyoneReady?: boolean;
   summary: ReadySummary;
 }
 

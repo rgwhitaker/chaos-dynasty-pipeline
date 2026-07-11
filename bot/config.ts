@@ -40,6 +40,7 @@ export function getLeagueConfig(): LeagueConfig {
     startWeek: parseWeek(process.env.LEAGUE_START_WEEK, 0),
     advanceThreshold: parseThreshold(process.env.LEAGUE_ADVANCE_THRESHOLD),
     commissionerRoleId: process.env.DISCORD_COMMISSIONER_ROLE_ID?.trim() || undefined,
+    leagueRoleId: process.env.DISCORD_LEAGUE_ROLE_ID?.trim() || undefined,
   };
 }
 
@@ -75,6 +76,17 @@ export function getNewspaperChannelId(): string | undefined {
  */
 export function getStatusChannelId(): string | undefined {
   return process.env.STATUS_CHANNEL_ID?.trim() || undefined;
+}
+
+/**
+ * The Discord channel id where the public "week advanced" announcement (with its
+ * mass tag) is posted. Only `ANNOUNCE_CHANNEL_ID` is used — it intentionally does
+ * *not* fall back to the status channel so mass-tag messages never land in the
+ * status dashboard channel. When unset, the announcement is posted in the channel
+ * the advance was triggered from.
+ */
+export function getAnnounceChannelId(): string | undefined {
+  return process.env.ANNOUNCE_CHANNEL_ID?.trim() || undefined;
 }
 
 /**
