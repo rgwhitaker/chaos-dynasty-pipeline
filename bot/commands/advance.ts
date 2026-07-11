@@ -161,7 +161,7 @@ export async function postAdvanceAnnouncements(
     const config = getLeagueConfig();
     const channelId = getAnnounceChannelId();
 
-    // Prefer the configured announce/status channel; otherwise post wherever the
+    // Prefer the configured announce channel; otherwise post wherever the
     // advance was triggered from.
     let channel: SendableChannel | undefined;
     if (channelId) {
