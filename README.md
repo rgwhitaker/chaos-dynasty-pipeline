@@ -109,7 +109,7 @@ The core weekly coordination flow lives in `bot/`:
 | `LEAGUE_START_WEEK` | Schedule index a fresh dynasty starts on (0 = Preseason) | `0` |
 | `LEAGUE_ADVANCE_THRESHOLD` | Ready teams required to advance, or `ALL` | `ALL` |
 | `LEAGUE_DYNASTY_ID` | Dynasty id the bot coordinates | `default` |
-| `DISCORD_COMMISSIONER_ROLE_ID` | Role allowed to run `/advance`; also pinged after an advance when everyone was ready | Manage Server permission |
+| `DISCORD_COMMISSIONER_ROLE_ID` | Role allowed to run `/advance`; also pinged after an advance when everyone was ready, and as soon as every team is marked ready | Manage Server permission |
 | `DISCORD_LEAGUE_ROLE_ID` | Role mass-tagged in the public advance announcement | `@everyone` |
 | `DISCORD_TEAM_LINKS` | JSON linking Discord users to seeded teams (**in-memory fallback only**) | none |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (web app) | none |
@@ -118,7 +118,7 @@ The core weekly coordination flow lives in `bot/`:
 | `NEWSPAPER_IMAGE_URL` | Optional image shown as the newspaper embed thumbnail | none |
 | `STATUS_CHANNEL_ID` | Channel for the persistent status dashboard (and reminders, unless `REMINDER_CHANNEL_ID` is set) | none |
 | `REMINDER_CHANNEL_ID` | Channel for the recurring "not ready" reminders (falls back to `STATUS_CHANNEL_ID`) | none |
-| `ANNOUNCE_CHANNEL_ID` | Channel the public "week advanced" announcement (mass-tag) is posted to | channel the advance was triggered from |
+| `ANNOUNCE_CHANNEL_ID` | Channel the public "week advanced" announcement (mass-tag) is posted to; also where commissioners are pinged when every team is ready (falls back to `STATUS_CHANNEL_ID` for that ping) | channel the advance was triggered from |
 
 When `NEXT_PUBLIC_SUPABASE_URL` **and** `SUPABASE_SERVICE_ROLE_KEY` are set,
 `getReadyStore()` uses the persistent `SupabaseReadyStore`. Otherwise it falls
@@ -246,6 +246,17 @@ gateway connection is ready):
   `/set-ready`, or the ready buttons (on `/status` or the dashboard itself);
   when the week advances (`/advance` or the dashboard **Advance Week** button)
   or is set (`/set-week`); when a reminder runs; and on startup.
+
+The moment **every** team is marked ready — via `/ready`, the ready buttons, or
+`/set-ready` — the bot pings the commissioner role
+(`DISCORD_COMMISSIONER_ROLE_ID`) in the announce channel (`ANNOUNCE_CHANNEL_ID`,
+falling back to `STATUS_CHANNEL_ID`) so they know to jump into the video game and
+advance the week, even if nobody has run `/advance`. This is handy when a manager
+only sets their status in the bot without logging into the game. The ping fires
+**once per week** (tracked in `bot_state.all_ready_notified_week`); if a team then
+un-readies, the marker resets so reaching an all-ready state again pings once
+more. It is skipped when no commissioner role or announce/status channel is
+configured.
 
 When `STATUS_CHANNEL_ID` is **unset**, the dashboard is not maintained. Reminders
 post to `REMINDER_CHANNEL_ID` if it is set; when both are unset, the recurring

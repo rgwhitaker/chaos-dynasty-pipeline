@@ -1,5 +1,6 @@
 import type { ButtonInteraction } from "discord.js";
 import type { BotCommand } from "@/bot/commands/types";
+import { notifyCommissionersIfEveryoneReady } from "@/bot/allReadyNotifier";
 import { advanceCommand } from "@/bot/commands/advance";
 import { deleteTeamCommand } from "@/bot/commands/deleteTeam";
 import { editTeamCommand } from "@/bot/commands/editTeam";
@@ -144,6 +145,9 @@ export async function handleReadyButton(interaction: ButtonInteraction): Promise
     if (!isDashboardButton) {
       await updateStatusDashboard(interaction.client);
     }
+
+    // Ping commissioners if this change made every team ready.
+    await notifyCommissionersIfEveryoneReady(interaction.client);
   } catch (error) {
     console.error("[ready-button] Failed to update ready status", error);
     await interaction.followUp({
