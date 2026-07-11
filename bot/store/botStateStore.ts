@@ -39,6 +39,18 @@ export interface BotStateStore {
   getLastReminderAt(): Promise<string | undefined>;
   /** Record when the recurring reminder last ran. */
   setLastReminderAt(iso: string): Promise<void>;
+
+  /**
+   * The week number (0-based schedule index) for which the commissioners were
+   * last pinged that every team is ready, if any. Used to fire that ping only
+   * once per week.
+   */
+  getAllReadyNotifiedWeek(): Promise<number | undefined>;
+  /**
+   * Record the week for which the "everyone is ready" commissioner ping was
+   * sent. Pass `null` to clear it (e.g. when a team un-readies again).
+   */
+  setAllReadyNotifiedWeek(weekNumber: number | null): Promise<void>;
 }
 
 const TABLE = "bot_state";
@@ -50,10 +62,11 @@ interface BotStateRow {
   status_message_id: string | null;
   last_advance_at: string | null;
   last_reminder_at: string | null;
+  all_ready_notified_week: number | null;
 }
 
 const BOT_STATE_COLUMNS =
-  "dynasty_id, status_channel_id, status_message_id, last_advance_at, last_reminder_at";
+  "dynasty_id, status_channel_id, status_message_id, last_advance_at, last_reminder_at, all_ready_notified_week";
 
 /**
  * In-memory bot-state store used when Supabase credentials are absent. State
@@ -64,6 +77,7 @@ export class InMemoryBotStateStore implements BotStateStore {
   private statusMessageRef?: StatusMessageRef;
   private lastAdvanceAt?: string;
   private lastReminderAt?: string;
+  private allReadyNotifiedWeek?: number;
 
   async getStatusMessageRef(): Promise<StatusMessageRef | undefined> {
     return this.statusMessageRef ? { ...this.statusMessageRef } : undefined;
@@ -91,6 +105,14 @@ export class InMemoryBotStateStore implements BotStateStore {
 
   async setLastReminderAt(iso: string): Promise<void> {
     this.lastReminderAt = iso;
+  }
+
+  async getAllReadyNotifiedWeek(): Promise<number | undefined> {
+    return this.allReadyNotifiedWeek;
+  }
+
+  async setAllReadyNotifiedWeek(weekNumber: number | null): Promise<void> {
+    this.allReadyNotifiedWeek = weekNumber ?? undefined;
   }
 }
 
@@ -167,6 +189,15 @@ export class SupabaseBotStateStore implements BotStateStore {
 
   async setLastReminderAt(iso: string): Promise<void> {
     await this.upsert({ last_reminder_at: iso });
+  }
+
+  async getAllReadyNotifiedWeek(): Promise<number | undefined> {
+    const row = await this.fetchRow();
+    return row?.all_ready_notified_week ?? undefined;
+  }
+
+  async setAllReadyNotifiedWeek(weekNumber: number | null): Promise<void> {
+    await this.upsert({ all_ready_notified_week: weekNumber });
   }
 }
 

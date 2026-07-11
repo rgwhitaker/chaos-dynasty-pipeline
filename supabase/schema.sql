@@ -120,17 +120,24 @@ create index if not exists box_scores_dynasty_week_idx
 --   * `last_reminder_at` — when the recurring "not ready" reminder last ran, so
 --     the 12h cadence keeps recurring and is preserved across restarts.
 create table if not exists public.bot_state (
-  dynasty_id        text primary key default 'default',
-  status_channel_id text,
-  status_message_id text,
-  last_advance_at   timestamptz,
-  last_reminder_at  timestamptz,
-  updated_at        timestamptz not null default now()
+  dynasty_id             text primary key default 'default',
+  status_channel_id      text,
+  status_message_id      text,
+  last_advance_at        timestamptz,
+  last_reminder_at       timestamptz,
+  all_ready_notified_week integer,
+  updated_at             timestamptz not null default now()
 );
 
 -- Backfill for existing databases created before `last_advance_at` was added.
 alter table public.bot_state
   add column if not exists last_advance_at timestamptz;
+
+-- Backfill for existing databases created before `all_ready_notified_week` was
+-- added. Tracks the week for which commissioners were already pinged that every
+-- team is ready, so the ping fires only once per week.
+alter table public.bot_state
+  add column if not exists all_ready_notified_week integer;
 
 -- Row level security ----------------------------------------------------------
 -- The Discord bot talks to Supabase with the service role key, which bypasses

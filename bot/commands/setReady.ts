@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from "discord.js";
 import type { ChatInputCommandInteraction } from "discord.js";
 import type { BotCommand } from "@/bot/commands/types";
+import { notifyCommissionersIfEveryoneReady } from "@/bot/allReadyNotifier";
 import { getLeagueConfig } from "@/bot/config";
 import { isCommissioner } from "@/bot/permissions";
 import { updateStatusDashboard } from "@/bot/statusDashboard";
@@ -88,6 +89,9 @@ export const setReadyCommand: BotCommand = {
 
       // Keep the persistent status dashboard in sync with this change.
       await updateStatusDashboard(interaction.client);
+
+      // Ping commissioners if this change made every team ready.
+      await notifyCommissionersIfEveryoneReady(interaction.client);
     } catch (error) {
       console.error("[set-ready] Failed to update ready status", error);
       await interaction.editReply({
