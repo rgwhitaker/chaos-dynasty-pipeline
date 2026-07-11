@@ -116,7 +116,8 @@ The core weekly coordination flow lives in `bot/`:
 | `XAI_API_KEY` | xAI Grok API key (required to generate newspapers) | none |
 | `NEWSPAPER_CHANNEL_ID` | Discord channel id the Weekly Newspaper is posted to | none |
 | `NEWSPAPER_IMAGE_URL` | Optional image shown as the newspaper embed thumbnail | none |
-| `STATUS_CHANNEL_ID` | Channel for the persistent status dashboard + recurring reminders | none |
+| `STATUS_CHANNEL_ID` | Channel for the persistent status dashboard (and reminders, unless `REMINDER_CHANNEL_ID` is set) | none |
+| `REMINDER_CHANNEL_ID` | Channel for the recurring "not ready" reminders (falls back to `STATUS_CHANNEL_ID`) | none |
 | `ANNOUNCE_CHANNEL_ID` | Channel the public "week advanced" announcement (mass-tag) is posted to | channel the advance was triggered from |
 
 When `NEXT_PUBLIC_SUPABASE_URL` **and** `SUPABASE_SERVICE_ROLE_KEY` are set,
@@ -188,19 +189,25 @@ When `STATUS_CHANNEL_ID` is set to a channel the bot can post in, two background
 features come online (both driven by `bot/scheduler.ts`, which starts once the
 gateway connection is ready):
 
-**Recurring reminders (every 12 hours)**
+**Recurring reminders (every 12 hours, anchored on the last advance)**
 
-- Every 12 hours the bot posts a single reminder to `STATUS_CHANNEL_ID` that
-  `@`-mentions only the teams still **not ready** for the current week, along with
-  the week name and deadline.
+- Reminders post to `REMINDER_CHANNEL_ID` when set, so you can keep them in a
+  dedicated channel separate from the status dashboard. When
+  `REMINDER_CHANNEL_ID` is unset they fall back to `STATUS_CHANNEL_ID`; when
+  neither is set, reminders are skipped.
+- The first reminder for a week fires **12 hours after the week was advanced**
+  (`/advance` or the dashboard **Advance Week** button), not on a fixed global
+  clock. After that, reminders **recur every 12 hours** until the next advance.
 - It never spams: if every linked team is already ready, the reminder is skipped
   entirely, and only not-ready owners are pinged (via scoped `allowedMentions`).
-- The cadence is **resilient across restarts**. The last reminder time is
-  persisted in the `bot_state` table, and a lightweight scheduler tick (every 30
-  minutes) compares against it — so a redeploy in the middle of the window
-  resumes the schedule instead of resetting it. On a brand-new dynasty the first
-  run only records a baseline, so a fresh deploy never immediately pings everyone.
-  (With the in-memory fallback — no Supabase — the cadence resets on restart.)
+- The cadence is **resilient across restarts**. Both the last advance time and
+  the last reminder time are persisted in the `bot_state` table
+  (`last_advance_at` / `last_reminder_at`), and a lightweight scheduler tick
+  (every 30 minutes) compares against them — so a redeploy in the middle of the
+  window resumes the schedule instead of resetting it. On a brand-new dynasty
+  (no advance yet) the first run only records a baseline, so a fresh deploy never
+  immediately pings everyone. (With the in-memory fallback — no Supabase — the
+  cadence resets on restart.)
 
 **Persistent status dashboard**
 
@@ -240,9 +247,9 @@ gateway connection is ready):
   when the week advances (`/advance` or the dashboard **Advance Week** button)
   or is set (`/set-week`); when a reminder runs; and on startup.
 
-When `STATUS_CHANNEL_ID` is **unset**, the dashboard is not maintained and the
-recurring reminders are skipped (a warning is logged) — everything else works as
-before.
+When `STATUS_CHANNEL_ID` is **unset**, the dashboard is not maintained. Reminders
+post to `REMINDER_CHANNEL_ID` if it is set; when both are unset, the recurring
+reminders are skipped (a warning is logged) — everything else works as before.
 
 ### Supabase setup
 
