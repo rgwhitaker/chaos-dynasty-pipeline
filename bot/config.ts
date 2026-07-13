@@ -109,6 +109,112 @@ export function isBotEnabled(): boolean {
 }
 
 /**
+ * Resolved OneDrive / Microsoft Graph configuration for the background
+ * screenshot monitor. All fields are optional so the bot runs fine without
+ * OneDrive configured; {@link isOnedriveConfigured} reports whether the minimum
+ * required values are present.
+ */
+export interface OnedriveConfig {
+  /** Azure AD application (client) id. */
+  clientId?: string;
+  /** Azure AD application client secret. */
+  clientSecret?: string;
+  /** Azure AD tenant id (or "common"/"consumers"/"organizations"). */
+  tenantId?: string;
+  /**
+   * Root OneDrive folder path to monitor, relative to the drive root
+   * (e.g. "Xbox Screenshots"). Leading/trailing slashes are trimmed.
+   */
+  monitoredPath?: string;
+  /**
+   * Optional folder path (relative to the drive root) to move processed files
+   * into. When unset, processed files are left in place.
+   */
+  processedPath?: string;
+  /**
+   * Optional explicit drive id to target. Required for app-only access to a
+   * specific user's OneDrive; when unset the client falls back to `/me/drive`.
+   */
+  driveId?: string;
+  /** How often (ms) the background monitor polls for new screenshots. */
+  pollIntervalMs: number;
+}
+
+/** Trim surrounding whitespace and slashes from a OneDrive folder path. */
+function normalizeFolderPath(value: string | undefined): string | undefined {
+  const trimmed = value?.trim().replace(/^\/+|\/+$/g, "");
+  return trimmed ? trimmed : undefined;
+}
+
+/** Default OneDrive poll cadence: 3 minutes. */
+const DEFAULT_ONEDRIVE_POLL_INTERVAL_MS = 3 * 60 * 1000;
+
+/**
+ * Parse the OneDrive poll interval (in minutes) from the environment, clamped to
+ * a sane minimum so a misconfiguration can't hammer the Graph API.
+ */
+function parsePollIntervalMs(value: string | undefined): number {
+  const minutes = Number.parseFloat(value ?? "");
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return DEFAULT_ONEDRIVE_POLL_INTERVAL_MS;
+  }
+  // Never poll more often than once per minute.
+  return Math.max(minutes, 1) * 60 * 1000;
+}
+
+/**
+ * Read the OneDrive / Microsoft Graph configuration from the environment. Kept
+ * in one place so the monitor, poller, and manual commands share a single source
+ * of truth.
+ */
+export function getOnedriveConfig(): OnedriveConfig {
+  return {
+    clientId: process.env.ONEDRIVE_CLIENT_ID?.trim() || undefined,
+    clientSecret: process.env.ONEDRIVE_CLIENT_SECRET?.trim() || undefined,
+    tenantId: process.env.ONEDRIVE_TENANT_ID?.trim() || undefined,
+    monitoredPath: normalizeFolderPath(process.env.ONEDRIVE_MONITORED_PATH),
+    processedPath: normalizeFolderPath(process.env.ONEDRIVE_PROCESSED_PATH),
+    driveId: process.env.ONEDRIVE_DRIVE_ID?.trim() || undefined,
+    pollIntervalMs: parsePollIntervalMs(process.env.ONEDRIVE_POLL_INTERVAL_MINUTES),
+  };
+}
+
+/**
+ * Whether OneDrive monitoring has the minimum configuration to run: Azure AD
+ * credentials (client id/secret/tenant) plus a monitored folder path.
+ */
+export function isOnedriveConfigured(config: OnedriveConfig = getOnedriveConfig()): boolean {
+  return Boolean(
+    config.clientId &&
+      config.clientSecret &&
+      config.tenantId &&
+      config.monitoredPath,
+  );
+}
+
+/**
+ * Whether the background OneDrive poller should run on startup. Requires OneDrive
+ * to be configured and `ONEDRIVE_MONITOR_ENABLED` not explicitly set to "false"
+ * (so it defaults on once credentials are present, but can be disabled without
+ * removing the credentials).
+ */
+export function isOnedriveMonitorEnabled(): boolean {
+  if (!isOnedriveConfigured()) {
+    return false;
+  }
+  return process.env.ONEDRIVE_MONITOR_ENABLED?.trim().toLowerCase() !== "false";
+}
+
+/**
+ * Optional Discord channel id where the OneDrive monitor posts a short summary
+ * after processing new screenshots. Falls back to `STATUS_CHANNEL_ID`; when
+ * neither is set, processing is silent (still logged).
+ */
+export function getOnedriveNotifyChannelId(): string | undefined {
+  return process.env.ONEDRIVE_NOTIFY_CHANNEL_ID?.trim() || getStatusChannelId();
+}
+
+/**
  * Resolved, validated bot configuration.
  *
  * `errors` lists any missing *required* values that prevent login; `warnings`

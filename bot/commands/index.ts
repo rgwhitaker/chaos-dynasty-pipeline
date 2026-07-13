@@ -4,8 +4,10 @@ import { notifyCommissionersIfEveryoneReady } from "@/bot/allReadyNotifier";
 import { advanceCommand } from "@/bot/commands/advance";
 import { deleteTeamCommand } from "@/bot/commands/deleteTeam";
 import { editTeamCommand } from "@/bot/commands/editTeam";
+import { importFromOnedriveCommand } from "@/bot/commands/importFromOnedrive";
 import { newspaperCommand } from "@/bot/commands/newspaper";
 import { pingCommand } from "@/bot/commands/ping";
+import { processScreenshotCommand } from "@/bot/commands/processScreenshot";
 import { processVideoCommand } from "@/bot/commands/processVideo";
 import { readyCommand } from "@/bot/commands/ready";
 import { registerCommand } from "@/bot/commands/register";
@@ -13,6 +15,7 @@ import { setEmojiCommand } from "@/bot/commands/setEmoji";
 import { setReadyCommand } from "@/bot/commands/setReady";
 import { setWeekCommand } from "@/bot/commands/setWeek";
 import { statusCommand } from "@/bot/commands/status";
+import { syncOnedriveCommand } from "@/bot/commands/syncOnedrive";
 import { unlinkCommand } from "@/bot/commands/unlink";
 import { updateStatusDashboard } from "@/bot/statusDashboard";
 import { getReadyStore } from "@/bot/store/readyStore";
@@ -39,6 +42,9 @@ export const commands: BotCommand[] = [
   deleteTeamCommand,
   pingCommand,
   processVideoCommand,
+  processScreenshotCommand,
+  syncOnedriveCommand,
+  importFromOnedriveCommand,
 ];
 
 /** Lookup by command name, used by the interaction dispatcher. */

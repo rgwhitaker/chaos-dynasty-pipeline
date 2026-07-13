@@ -23,15 +23,17 @@ It combines:
 - `bot/start.ts` – bot startup entry point (config validation, login, graceful shutdown)
 - `bot/client.ts` – Discord client factory, command registration, gateway lifecycle logging
 - `bot/config.ts` / `bot/logger.ts` – env configuration/validation and structured logging
-- `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/set-week`, `/newspaper`, `/register`, `/set-ready`, `/set-emoji`, `/edit-team`, `/unlink`, `/delete-team`, `/ping`, `/process-video`)
-- `bot/store/` – ready-to-advance state store + weekly newspaper store + box score store + bot-state store (Supabase-backed, with an in-memory fallback)
+- `bot/commands/` – slash command modules (`/ready`, `/status`, `/advance`, `/set-week`, `/newspaper`, `/register`, `/set-ready`, `/set-emoji`, `/edit-team`, `/unlink`, `/delete-team`, `/ping`, `/process-video`, `/process-screenshot`, `/sync-onedrive`, `/import-from-onedrive`)
+- `bot/store/` – ready-to-advance state store + weekly newspaper store + box score store + extracted-data store + bot-state store (Supabase-backed, with an in-memory fallback)
 - `bot/newspaper.ts` – Weekly Newspaper orchestration (generate → store → post)
 - `bot/boxScore.ts` – `/process-video` orchestration (download → frame extract → vision → store)
+- `bot/onedrive/monitor.ts` – OneDrive screenshot monitoring orchestration + background poller (delta poll → infer → vision → store)
 - `bot/scheduler.ts` / `bot/reminders.ts` / `bot/statusDashboard.ts` – recurring 12h reminders and the persistent status dashboard (`STATUS_CHANNEL_ID`)
 - `bot/ui/` – Discord message/embed + button builders
 - `lib/types/` – Core domain types
 - `lib/supabase/` – Supabase SSR/browser clients + service-role client (`service.ts`)
-- `lib/grok/` – Grok API client scaffolding + Weekly Newspaper generation (`newspaper.ts`) + Box Score vision extraction (`boxScore.ts`)
+- `lib/grok/` – Grok API client scaffolding + Weekly Newspaper generation (`newspaper.ts`) + Box Score vision extraction (`boxScore.ts`) + general screenshot extraction (`screenshot.ts`)
+- `lib/onedrive/` – Microsoft Graph client (`client.ts`) + folder/type inference (`pathParser.ts`)
 - `lib/video/` – ffmpeg-based video frame extraction (`frames.ts`)
 - `components/ui/` – shadcn-style reusable UI components
 - `supabase/` – SQL schema (`schema.sql`) and seed data (`seed.sql`)
@@ -93,6 +95,9 @@ The core weekly coordination flow lives in `bot/`:
   - `/delete-team <team> [force]` – permanently delete a team. Restricted to commissioners. The `team` option has autocomplete. As a safety check, deletion is refused while a user is still linked unless `force:true` is passed.
   - `/ping` – simple liveness check.
   - `/process-video <video> [week]` – extract structured game data (v1: a **Box Score**) from a recorded game video. See [Video processing](#video-processing-process-video) below.
+  - `/process-screenshot <image> [type] [week]` – extract structured data from a single screenshot uploaded to Discord (manual fallback for the OneDrive monitor). See [OneDrive screenshot monitoring](#onedrive-screenshot-monitoring) below.
+  - `/sync-onedrive [full]` – poll OneDrive for new screenshots now instead of waiting for the background monitor. Restricted to commissioners. Pass `full:true` to re-scan the whole monitored folder.
+  - `/import-from-onedrive [path]` – re-scan a specific OneDrive folder (defaults to the monitored folder) and process every image under it. Restricted to commissioners.
 - `bot/store/readyStore.ts` – the `ReadyStore` interface plus the in-memory implementation (`InMemoryReadyStore`) used as a local-dev fallback. `getReadyStore()` selects the Supabase-backed store when credentials are present.
 - `bot/store/supabaseReadyStore.ts` – `SupabaseReadyStore`, the persistent implementation of `ReadyStore` backed by Supabase (`teams`, `dynasty_state`, `team_ready_states`).
 - `lib/weekSchedule.ts` – the full ordered [season schedule](#season-schedule--deadlines) (week names + `isGameWeek` / `defaultDurationHours` metadata) plus deadline-calculation helpers shared by the store and commands.
@@ -492,6 +497,85 @@ clear ⚠️ messages.
 - Run [`supabase/schema.sql`](supabase/schema.sql) to create the `box_scores`
   table (idempotent — re-running just adds the new table).
 
+## OneDrive screenshot monitoring
+
+Xbox auto-uploads screenshots to OneDrive. When configured, the bot polls a
+monitored OneDrive folder in the background, extracts structured data from new
+screenshots with Grok Vision, and stores it in the `extracted_data` table — so
+you can drop screenshots into the right folders and the data lands in Supabase
+without running any Discord command.
+
+### Folder structure & inference
+
+The bot infers the **week** and **data type** from each screenshot's path
+(relative to the monitored root), for example:
+
+```text
+2026 Week 2/Box Scores/final.png   → week = "Week 2", type = box-score
+2026 Heisman Race/candidate.png    → type = heisman
+2026 Week 0/Player Stats/x.jpeg    → week = "Week 0", type = player-stats
+```
+
+- **Week** — read from a `Week N` folder segment and mapped to the schedule
+  index in `lib/weekSchedule.ts`.
+- **Data type** — matched from known subfolder names (`Box Scores`,
+  `Player Stats`, `Heisman`, `Standings`, …), falling back to the filename.
+  Matching is case/punctuation-insensitive, and unrecognized screenshots are
+  stored as `unknown` with a generic extraction. Adding a new type is just a
+  keyword entry in `lib/onedrive/pathParser.ts` plus a prompt in
+  `lib/grok/screenshot.ts`.
+
+Initial dedicated prompts ship for **box score** and **heisman**; other types
+use a generic extractor.
+
+### How it works
+
+1. **Poll** (`lib/onedrive/client.ts`) — the Microsoft Graph **Delta API** is
+   polled on a schedule (default every 3 minutes). The delta link is persisted
+   in `bot_state.onedrive_delta_link` so each poll only fetches changes and the
+   cadence survives restarts. (Delta polling is intentionally the v1 approach;
+   webhooks/subscriptions can be added later without touching the pipeline.)
+2. **Detect** — new `.png/.jpg/.jpeg` files under the monitored folder are found.
+3. **Infer** (`lib/onedrive/pathParser.ts`) — week + data type from the path.
+4. **Vision** (`lib/grok/screenshot.ts`) — the image is sent to Grok Vision with
+   a type-specific prompt; the response is parsed defensively into JSON.
+5. **Store** (`bot/store/extractedDataStore.ts`) — the result is saved to
+   `extracted_data` (JSONB `data` + `data_type`, `week`, `source_path`), with an
+   in-memory fallback for local development. `source_path` is unique per dynasty,
+   so a file is never processed twice.
+6. **Notify** — a short "imported N screenshot(s)" summary is optionally posted
+   to `ONEDRIVE_NOTIFY_CHANNEL_ID` (falls back to `STATUS_CHANNEL_ID`).
+
+Processing is best-effort per file: one failure is logged (with the `[Bot]` /
+`[Error]` prefixes) and the batch continues so a single bad screenshot never
+stalls the pipeline. If `ONEDRIVE_PROCESSED_PATH` is set, processed files are
+moved there for a clean audit trail.
+
+### Manual commands
+
+- `/process-screenshot image:<attach a PNG/JPG> [type] [week]` — process a single
+  screenshot uploaded straight to Discord (manual fallback). Type/week are
+  inferred from the filename when omitted. Available to everyone.
+- `/sync-onedrive [full:true]` — poll OneDrive now instead of waiting for the
+  next background tick. `full:true` ignores the delta link and re-scans the whole
+  monitored folder. Commissioners only.
+- `/import-from-onedrive [path]` — re-scan a specific folder (defaults to the
+  monitored folder) and process every image under it; useful for back-filling.
+  Commissioners only.
+
+### Configuration
+
+- Set the Azure AD app-only credentials `ONEDRIVE_CLIENT_ID`,
+  `ONEDRIVE_CLIENT_SECRET`, `ONEDRIVE_TENANT_ID`, and the folder to watch
+  `ONEDRIVE_MONITORED_PATH`. Optional: `ONEDRIVE_DRIVE_ID` (target a specific
+  drive for app-only access), `ONEDRIVE_PROCESSED_PATH`,
+  `ONEDRIVE_POLL_INTERVAL_MINUTES` (default 3, min 1),
+  `ONEDRIVE_MONITOR_ENABLED` (set `false` to keep credentials but disable the
+  background poller), and `ONEDRIVE_NOTIFY_CHANNEL_ID`.
+- Set `XAI_API_KEY` so the bot can call Grok Vision.
+- Run [`supabase/schema.sql`](supabase/schema.sql) to create the `extracted_data`
+  table and add the `bot_state.onedrive_delta_link` column (idempotent).
+
 ## Managing teams and links
 
 Commissioners have a few more tools for keeping the roster tidy. All are
@@ -513,7 +597,7 @@ selection where relevant.
 1. ✅ Interactive ready-status command flow (in-memory)
 2. ✅ Move ready/week state persistence to Supabase
 3. ✅ Full custom season schedule + commissioner deadline controls (`/advance` overrides, `/set-week`)
-4. Screenshot ingestion + OCR extraction pipeline
+4. ✅ Screenshot ingestion + OneDrive monitoring pipeline (`/process-screenshot`, `/sync-onedrive`, `/import-from-onedrive`, background poller)
 5. ✅ AI dynasty newspaper generation and publishing (`/newspaper`)
 6. ✅ Video → Box Score extraction (`/process-video`, ffmpeg + Grok Vision)
 7. ✅ Recurring deadline reminders + a persistent status dashboard (Phase 2, `STATUS_CHANNEL_ID`)

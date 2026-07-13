@@ -125,6 +125,12 @@ function attachLifecycleListeners(
     void import("@/bot/scheduler")
       .then(({ startScheduler }) => startScheduler(readyClient))
       .catch((error) => logError("Failed to start the reminder scheduler", error));
+
+    // Start the background OneDrive screenshot monitor (a no-op unless OneDrive
+    // is configured). Dynamically imported for the same reason as the scheduler.
+    void import("@/bot/onedrive/monitor")
+      .then(({ startOnedriveMonitor }) => startOnedriveMonitor(readyClient))
+      .catch((error) => logError("Failed to start the OneDrive monitor", error));
   });
 
   client.on(Events.Error, (error) => {
