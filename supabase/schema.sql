@@ -110,6 +110,33 @@ create table if not exists public.box_scores (
 create index if not exists box_scores_dynasty_week_idx
   on public.box_scores (dynasty_id, week, created_at desc);
 
+-- Extracted screenshot data ---------------------------------------------------
+-- One row per screenshot processed by the OneDrive monitor (or the manual
+-- `/process-screenshot` command). The structured result Grok Vision returns is
+-- stored in `data` (JSONB) so each `data_type` can carry its own shape without
+-- migrations. `data_type` records the inferred kind of screenshot (e.g.
+-- `box-score`, `heisman`, `player-stats`, `standings`). `week` is nullable
+-- because it can't always be inferred. `source_path` is the original OneDrive
+-- (or upload) path and is unique per dynasty so a file is never processed twice.
+create table if not exists public.extracted_data (
+  id           text primary key,
+  dynasty_id   text not null default 'default',
+  data_type    text not null default 'unknown',
+  week         integer,
+  data         jsonb not null,
+  model        text,
+  source_path  text not null,
+  source_name  text,
+  processed_at timestamptz not null default now(),
+  created_at   timestamptz not null default now()
+);
+
+create unique index if not exists extracted_data_source_path_idx
+  on public.extracted_data (dynasty_id, source_path);
+
+create index if not exists extracted_data_type_week_idx
+  on public.extracted_data (dynasty_id, data_type, week, processed_at desc);
+
 -- Bot runtime state ----------------------------------------------------------
 -- One row per dynasty holding small pieces of state the Discord bot needs to
 -- survive restarts:
@@ -126,6 +153,7 @@ create table if not exists public.bot_state (
   last_advance_at        timestamptz,
   last_reminder_at       timestamptz,
   all_ready_notified_week integer,
+  onedrive_delta_link    text,
   updated_at             timestamptz not null default now()
 );
 
@@ -139,6 +167,12 @@ alter table public.bot_state
 alter table public.bot_state
   add column if not exists all_ready_notified_week integer;
 
+-- Backfill for existing databases created before OneDrive monitoring was added.
+-- Stores the Microsoft Graph delta link so polling resumes from the last known
+-- state across restarts instead of re-scanning the whole folder.
+alter table public.bot_state
+  add column if not exists onedrive_delta_link text;
+
 -- Row level security ----------------------------------------------------------
 -- The Discord bot talks to Supabase with the service role key, which bypasses
 -- RLS. Enabling RLS with no public policies keeps these tables private from the
@@ -149,4 +183,5 @@ alter table public.dynasty_state enable row level security;
 alter table public.team_ready_states enable row level security;
 alter table public.newspapers enable row level security;
 alter table public.box_scores enable row level security;
+alter table public.extracted_data enable row level security;
 alter table public.bot_state enable row level security;

@@ -247,3 +247,45 @@ export interface BoxScoreRecord {
   sourceVideo?: string;
   createdAt: string;
 }
+
+/**
+ * The kinds of screenshot the OneDrive/screenshot pipeline knows how to extract.
+ * `box-score` and `heisman` have dedicated vision prompts; everything else uses
+ * a generic extractor. `unknown` is used when the folder/filename gives no hint.
+ * Kept as a string union (not an enum) so it can grow without migrations —
+ * `extracted_data.data_type` is a plain text column.
+ */
+export type ScreenshotDataType =
+  | "box-score"
+  | "heisman"
+  | "player-stats"
+  | "standings"
+  | "unknown";
+
+/**
+ * Structured data extracted from a single screenshot by Grok Vision. The shape
+ * of `data` depends on `dataType` (e.g. a {@link BoxScore} for `box-score`), so
+ * it is intentionally left as free-form JSON and stored in a JSONB column.
+ */
+export interface ExtractedDataRecord {
+  id: Id;
+  dynastyId: Id;
+  /** The inferred kind of screenshot (drives the vision prompt + querying). */
+  dataType: ScreenshotDataType;
+  /** Week the data belongs to (0-based schedule index), when inferable. */
+  weekNumber?: number;
+  /** The structured JSON payload Grok Vision returned for this screenshot. */
+  data: Record<string, unknown>;
+  /** Grok vision model used to extract the data. */
+  model: string;
+  /**
+   * Original source path (e.g. the OneDrive path or uploaded filename), stored
+   * for traceability and to deduplicate already-processed files.
+   */
+  sourcePath: string;
+  /** Original file name, for display. */
+  sourceName?: string;
+  /** ISO timestamp the screenshot was processed. */
+  processedAt: string;
+  createdAt: string;
+}

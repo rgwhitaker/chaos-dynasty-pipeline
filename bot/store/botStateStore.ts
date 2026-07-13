@@ -51,6 +51,18 @@ export interface BotStateStore {
    * sent. Pass `null` to clear it (e.g. when a team un-readies again).
    */
   setAllReadyNotifiedWeek(weekNumber: number | null): Promise<void>;
+
+  /**
+   * The persisted Microsoft Graph delta link for the OneDrive monitor, if the
+   * folder has been polled at least once. Resuming from this link means the
+   * poller only fetches changes since the last run.
+   */
+  getOnedriveDeltaLink(): Promise<string | undefined>;
+  /**
+   * Record the latest Microsoft Graph delta link. Pass `null` to clear it (e.g.
+   * to force a full re-scan on the next poll).
+   */
+  setOnedriveDeltaLink(deltaLink: string | null): Promise<void>;
 }
 
 const TABLE = "bot_state";
@@ -63,10 +75,11 @@ interface BotStateRow {
   last_advance_at: string | null;
   last_reminder_at: string | null;
   all_ready_notified_week: number | null;
+  onedrive_delta_link: string | null;
 }
 
 const BOT_STATE_COLUMNS =
-  "dynasty_id, status_channel_id, status_message_id, last_advance_at, last_reminder_at, all_ready_notified_week";
+  "dynasty_id, status_channel_id, status_message_id, last_advance_at, last_reminder_at, all_ready_notified_week, onedrive_delta_link";
 
 /**
  * In-memory bot-state store used when Supabase credentials are absent. State
@@ -78,6 +91,7 @@ export class InMemoryBotStateStore implements BotStateStore {
   private lastAdvanceAt?: string;
   private lastReminderAt?: string;
   private allReadyNotifiedWeek?: number;
+  private onedriveDeltaLink?: string;
 
   async getStatusMessageRef(): Promise<StatusMessageRef | undefined> {
     return this.statusMessageRef ? { ...this.statusMessageRef } : undefined;
@@ -113,6 +127,14 @@ export class InMemoryBotStateStore implements BotStateStore {
 
   async setAllReadyNotifiedWeek(weekNumber: number | null): Promise<void> {
     this.allReadyNotifiedWeek = weekNumber ?? undefined;
+  }
+
+  async getOnedriveDeltaLink(): Promise<string | undefined> {
+    return this.onedriveDeltaLink;
+  }
+
+  async setOnedriveDeltaLink(deltaLink: string | null): Promise<void> {
+    this.onedriveDeltaLink = deltaLink ?? undefined;
   }
 }
 
@@ -198,6 +220,15 @@ export class SupabaseBotStateStore implements BotStateStore {
 
   async setAllReadyNotifiedWeek(weekNumber: number | null): Promise<void> {
     await this.upsert({ all_ready_notified_week: weekNumber });
+  }
+
+  async getOnedriveDeltaLink(): Promise<string | undefined> {
+    const row = await this.fetchRow();
+    return row?.onedrive_delta_link ?? undefined;
+  }
+
+  async setOnedriveDeltaLink(deltaLink: string | null): Promise<void> {
+    await this.upsert({ onedrive_delta_link: deltaLink });
   }
 }
 
