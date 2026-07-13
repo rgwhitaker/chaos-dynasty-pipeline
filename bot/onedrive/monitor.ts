@@ -188,6 +188,8 @@ export async function importFromOnedrivePath(
     return { configured: false, processed: 0, skipped: 0, failed: 0, records: [] };
   }
 
+  // monitoredPath is guaranteed present by isOnedriveConfigured() above; fall
+  // back to it when no explicit path is supplied.
   const target = folderPath.trim().replace(/^\/+|\/+$/g, "") || config.monitoredPath!;
   logBot(`OneDrive: importing all screenshots under "${target}"...`);
   const items = await listChildrenRecursive(config, target);
