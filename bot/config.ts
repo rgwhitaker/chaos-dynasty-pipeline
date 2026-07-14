@@ -69,10 +69,8 @@ export function getNewspaperChannelId(): string | undefined {
 }
 
 /**
- * The Discord channel id that hosts the persistent status dashboard and receives
- * the recurring "not ready" reminders. When unset, the dashboard is not
- * maintained and reminders are skipped (a warning is logged). Set
- * `STATUS_CHANNEL_ID` to enable both.
+ * The Discord channel id that hosts the persistent status dashboard. When unset,
+ * the dashboard is not maintained.
  */
 export function getStatusChannelId(): string | undefined {
   return process.env.STATUS_CHANNEL_ID?.trim() || undefined;
@@ -91,13 +89,18 @@ export function getAnnounceChannelId(): string | undefined {
 
 /**
  * The Discord channel id that receives the recurring "not ready" reminders.
- * Set `REMINDER_CHANNEL_ID` to post reminders to a dedicated channel, separate
- * from the status dashboard. When unset, it falls back to `STATUS_CHANNEL_ID`
- * for backward compatibility; when neither is set, reminders are skipped (a
- * warning is logged).
+ * Set `REMINDER_CHANNEL_ID` to post reminders to a dedicated channel. When
+ * unset, reminders fall back to the announce channel (`ANNOUNCE_CHANNEL_ID`) so
+ * they land where weekly advance announcements are posted. `STATUS_CHANNEL_ID`
+ * remains the final legacy fallback; when none are set, reminders are skipped
+ * (a warning is logged).
  */
 export function getReminderChannelId(): string | undefined {
-  return process.env.REMINDER_CHANNEL_ID?.trim() || getStatusChannelId();
+  return (
+    process.env.REMINDER_CHANNEL_ID?.trim() ||
+    getAnnounceChannelId() ||
+    getStatusChannelId()
+  );
 }
 
 /**

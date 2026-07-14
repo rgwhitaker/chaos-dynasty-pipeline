@@ -121,8 +121,8 @@ The core weekly coordination flow lives in `bot/`:
 | `XAI_API_KEY` | xAI Grok API key (required to generate newspapers) | none |
 | `NEWSPAPER_CHANNEL_ID` | Discord channel id the Weekly Newspaper is posted to | none |
 | `NEWSPAPER_IMAGE_URL` | Optional image shown as the newspaper embed thumbnail | none |
-| `STATUS_CHANNEL_ID` | Channel for the persistent status dashboard (and reminders, unless `REMINDER_CHANNEL_ID` is set) | none |
-| `REMINDER_CHANNEL_ID` | Channel for the recurring "not ready" reminders (falls back to `STATUS_CHANNEL_ID`) | none |
+| `STATUS_CHANNEL_ID` | Channel for the persistent status dashboard | none |
+| `REMINDER_CHANNEL_ID` | Channel for the recurring "not ready" reminders (falls back to `ANNOUNCE_CHANNEL_ID`, then `STATUS_CHANNEL_ID`) | none |
 | `ANNOUNCE_CHANNEL_ID` | Channel the public "week advanced" announcement (mass-tag) is posted to; also where commissioners are pinged when every team is ready (falls back to `STATUS_CHANNEL_ID` for that ping) | channel the advance was triggered from |
 
 When `NEXT_PUBLIC_SUPABASE_URL` **and** `SUPABASE_SERVICE_ROLE_KEY` are set,
@@ -198,8 +198,9 @@ gateway connection is ready):
 
 - Reminders post to `REMINDER_CHANNEL_ID` when set, so you can keep them in a
   dedicated channel separate from the status dashboard. When
-  `REMINDER_CHANNEL_ID` is unset they fall back to `STATUS_CHANNEL_ID`; when
-  neither is set, reminders are skipped.
+  `REMINDER_CHANNEL_ID` is unset they fall back to `ANNOUNCE_CHANNEL_ID` (same
+  channel as week-advance announcements), then `STATUS_CHANNEL_ID`; when none
+  are set, reminders are skipped.
 - The first reminder for a week fires **12 hours after the week was advanced**
   (`/advance` or the dashboard **Advance Week** button), not on a fixed global
   clock. After that, reminders **recur every 12 hours** until the next advance.

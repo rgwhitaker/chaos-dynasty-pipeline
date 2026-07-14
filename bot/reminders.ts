@@ -19,7 +19,7 @@ export async function sendNotReadyReminder(client: Client): Promise<number> {
   const channelId = getReminderChannelId();
   if (!channelId) {
     logWarn(
-      "Neither REMINDER_CHANNEL_ID nor STATUS_CHANNEL_ID is set; skipping the recurring not-ready reminder.",
+      "REMINDER_CHANNEL_ID, ANNOUNCE_CHANNEL_ID, and STATUS_CHANNEL_ID are all unset; skipping the recurring not-ready reminder.",
     );
     return 0;
   }
