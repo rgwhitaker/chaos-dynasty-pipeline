@@ -124,8 +124,8 @@ export interface AdvanceResult {
   /** ISO deadline set for the new current week (present when advanced). */
   deadline?: string;
   /**
-   * True when the advance was refused because the dynasty is already on the last
-   * week of the schedule (there is nowhere left to advance to).
+   * Legacy flag from the non-wrapping advance flow. With schedule rollover
+   * enabled, advancing from the final week now wraps to the first week.
    */
   atLastWeek: boolean;
   /**

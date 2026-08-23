@@ -14,9 +14,9 @@ import {
 import {
   calculateDeadline,
   clampWeekIndex,
+  getNextWeekIndex,
   getWeekByIndex,
   getWeekName,
-  isLastWeekIndex,
   isValidWeekIndex,
 } from "@/lib/weekSchedule";
 import type {
@@ -146,7 +146,7 @@ export interface ReadyStore {
    * Advance to the next week in the schedule when enough teams are ready. Resets
    * readiness for the new week and calculates its deadline (overridable via
    * `options.deadlineOverrideHours`). Returns whether the advance actually
-   * happened; refuses to advance past the last week of the schedule. Pass
+   * happened; wraps from the final week back to the first week. Pass
    * `options.force` to advance even when not enough teams are ready.
    */
   advanceWeek(options?: AdvanceOptions): Promise<AdvanceResult>;
@@ -484,19 +484,6 @@ export class InMemoryReadyStore implements ReadyStore {
     const previousWeekName = getWeekName(previousWeek);
     const force = options?.force ?? false;
 
-    // Refuse to advance past the last week of the schedule.
-    if (isLastWeekIndex(previousWeek)) {
-      return {
-        advanced: false,
-        previousWeek,
-        currentWeek: previousWeek,
-        previousWeekName,
-        currentWeekName: previousWeekName,
-        atLastWeek: true,
-        summary,
-      };
-    }
-
     // Unless forced, require enough teams to be ready.
     if (!force && !summary.canAdvance) {
       return {
@@ -515,8 +502,9 @@ export class InMemoryReadyStore implements ReadyStore {
     // Whether every team was already marked ready when we advanced.
     const everyoneReady = summary.totalCount > 0 && summary.readyCount === summary.totalCount;
 
-    // Move to the next week and reset readiness so the new week starts clean.
-    const nextWeek = previousWeek + 1;
+    // Move to the next week (wrapping to the top after the final week) and
+    // reset readiness so the new week starts clean.
+    const nextWeek = getNextWeekIndex(previousWeek);
     for (const team of this.teams) {
       team.readyStatus = "NOT_READY";
       team.updatedAt = new Date().toISOString();

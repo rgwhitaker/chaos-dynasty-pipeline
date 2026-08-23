@@ -121,6 +121,15 @@ export function isLastWeekIndex(index: number): boolean {
 }
 
 /**
+ * Resolve the next schedule index after `index`, wrapping from the final week
+ * back to the start of the schedule.
+ */
+export function getNextWeekIndex(index: number): number {
+  const normalized = clampWeekIndex(index);
+  return isLastWeekIndex(normalized) ? FIRST_WEEK_INDEX : normalized + 1;
+}
+
+/**
  * Human-readable label for a schedule index. Falls back to `Week {index}` for
  * out-of-range values so callers always have something to show.
  */
