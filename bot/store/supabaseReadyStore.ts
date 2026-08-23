@@ -16,9 +16,9 @@ import {
 import {
   calculateDeadline,
   clampWeekIndex,
+  getNextWeekIndex,
   getWeekByIndex,
   getWeekName,
-  isLastWeekIndex,
   isValidWeekIndex,
 } from "@/lib/weekSchedule";
 import type {
@@ -474,19 +474,6 @@ export class SupabaseReadyStore implements ReadyStore {
     const previousWeekName = getWeekName(previousWeek);
     const force = options?.force ?? false;
 
-    // Refuse to advance past the last week of the schedule.
-    if (isLastWeekIndex(previousWeek)) {
-      return {
-        advanced: false,
-        previousWeek,
-        currentWeek: previousWeek,
-        previousWeekName,
-        currentWeekName: previousWeekName,
-        atLastWeek: true,
-        summary,
-      };
-    }
-
     // Unless forced, require enough teams to be ready.
     if (!force && !summary.canAdvance) {
       return {
@@ -495,7 +482,6 @@ export class SupabaseReadyStore implements ReadyStore {
         currentWeek: previousWeek,
         previousWeekName,
         currentWeekName: previousWeekName,
-        atLastWeek: false,
         summary,
       };
     }
@@ -505,7 +491,7 @@ export class SupabaseReadyStore implements ReadyStore {
     // Whether every team was already marked ready when we advanced.
     const everyoneReady = summary.totalCount > 0 && summary.readyCount === summary.totalCount;
 
-    const nextWeek = previousWeek + 1;
+    const nextWeek = getNextWeekIndex(previousWeek);
 
     // Reset readiness for the new week so everyone starts NOT_READY, clearing
     // any stale rows left over from a previous visit to this week.
@@ -523,7 +509,6 @@ export class SupabaseReadyStore implements ReadyStore {
       previousWeekName,
       currentWeekName: nextState.weekName,
       deadline: nextState.deadline,
-      atLastWeek: false,
       forced,
       everyoneReady,
       summary: nextSummary,

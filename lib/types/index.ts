@@ -124,11 +124,6 @@ export interface AdvanceResult {
   /** ISO deadline set for the new current week (present when advanced). */
   deadline?: string;
   /**
-   * True when the advance was refused because the dynasty is already on the last
-   * week of the schedule (there is nowhere left to advance to).
-   */
-  atLastWeek: boolean;
-  /**
    * True when the advance was forced past the ready-count requirement (i.e. it
    * happened even though not enough teams were marked ready).
    */

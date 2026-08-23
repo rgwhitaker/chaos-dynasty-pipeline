@@ -59,18 +59,6 @@ export async function buildAdvanceReplyPayload(
   result: AdvanceResult,
 ): Promise<AdvanceReplyPayload> {
   if (!result.advanced) {
-    // Already at the end of the schedule — there is nowhere left to go.
-    if (result.atLastWeek) {
-      const message = await buildReadyStatusMessage(result.summary);
-      return {
-        content:
-          `**${result.previousWeekName}** is the final week of the season — ` +
-          "there is nothing left to advance to. Use `/set-week` to jump to " +
-          "another week if you need to reset the schedule.",
-        ...message,
-      };
-    }
-
     const { summary } = result;
     const message = await buildReadyStatusMessage(summary);
     return {
