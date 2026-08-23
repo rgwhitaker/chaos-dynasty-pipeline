@@ -492,7 +492,6 @@ export class InMemoryReadyStore implements ReadyStore {
         currentWeek: previousWeek,
         previousWeekName,
         currentWeekName: previousWeekName,
-        atLastWeek: false,
         summary,
       };
     }
@@ -526,7 +525,6 @@ export class InMemoryReadyStore implements ReadyStore {
       previousWeekName,
       currentWeekName: nextState.weekName,
       deadline: nextState.deadline,
-      atLastWeek: false,
       forced,
       everyoneReady,
       summary: nextSummary,

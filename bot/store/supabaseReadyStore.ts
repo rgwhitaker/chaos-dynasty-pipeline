@@ -482,7 +482,6 @@ export class SupabaseReadyStore implements ReadyStore {
         currentWeek: previousWeek,
         previousWeekName,
         currentWeekName: previousWeekName,
-        atLastWeek: false,
         summary,
       };
     }
@@ -510,7 +509,6 @@ export class SupabaseReadyStore implements ReadyStore {
       previousWeekName,
       currentWeekName: nextState.weekName,
       deadline: nextState.deadline,
-      atLastWeek: false,
       forced,
       everyoneReady,
       summary: nextSummary,
