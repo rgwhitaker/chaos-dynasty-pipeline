@@ -42,12 +42,10 @@ function formatTeamList(
 }
 
 /**
- * Build the commissioner-only **Advance Week** button row shown on the
- * persistent dashboard. The button itself is visible to everyone (Discord has
- * no per-viewer component rendering on a shared message), but the click handler
- * gates the action behind {@link isCommissioner}: non-commissioners are turned
- * away with an ephemeral note, and commissioners get a confirmation prompt
- * before anything advances. Rendered as a green Success button to stand apart
+ * Build the **Advance Week** button row shown on the persistent dashboard.
+ * The button is visible to (and clickable by) everyone: the click handler
+ * opens a confirmation prompt before anything advances, but there is no
+ * commissioner-only gate. Rendered as a green Success button to stand apart
  * from the neutral ready-check controls above it.
  */
 async function buildAdvanceButtonRow(): Promise<ActionRowBuilder<ButtonBuilder>> {
@@ -71,9 +69,9 @@ async function buildAdvanceButtonRow(): Promise<ActionRowBuilder<ButtonBuilder>>
  * Refresh** buttons so members can act on it directly. The buttons use a
  * dashboard-specific id namespace ({@link DASHBOARD_BUTTON_IDS}) so the shared
  * handler re-renders this layout (not the `/status` one) when they are clicked.
- * A second row adds a commissioner-only green **Advance Week** button
- * ({@link DASHBOARD_ADVANCE_BUTTON_IDS}) that runs the `/advance` flow after a
- * confirmation prompt.
+ * A second row adds a green **Advance Week** button
+ * ({@link DASHBOARD_ADVANCE_BUTTON_IDS}), open to any user, that runs the
+ * `/advance` flow after a confirmation prompt.
  *
  * The deadline renders as a native Discord timestamp, so "time remaining"
  * updates on its own in every viewer's client without the bot re-editing the
