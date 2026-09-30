@@ -84,11 +84,11 @@ The core weekly coordination flow lives in `bot/`:
 - `bot/commands/` – slash commands built with `SlashCommandBuilder`:
   - `/ready [ready:true|false]` – mark **your** team ready (or not ready) for the current week. Only users linked to a team may use it.
   - `/status` – show the current week and which teams are ready / not ready.
-  - `/advance [deadline_hours]` – advance to the next week in the [season schedule](#season-schedule--deadlines). Restricted to commissioners (configured role or Manage Server permission). **Advancing no longer requires teams to be ready** — it always proceeds after a confirmation step, so a commissioner can advance at any time. Automatically calculates the new week's deadline (48h for game weeks, 24h otherwise); pass `deadline_hours` to override it. On confirmation it posts a **public announcement that mass-tags the whole league** (the configured [league role](#configuration), or `@everyone`) in the [announce channel](#configuration) with the new week, its deadline, and when the next advance will happen (e.g. "advance again in ~48 hours"), and refreshes the [persistent status dashboard](#recurring-reminders--persistent-status-dashboard). When **every** team was already marked ready, it also sends a separate heads-up to the commissioners (via `DISCORD_COMMISSIONER_ROLE_ID`) so they know they can safely force the advance in-game. The Weekly Newspaper is **not** generated automatically — run `/newspaper` for that.
+  - `/advance [deadline_hours]` – advance to the next week in the [season schedule](#season-schedule--deadlines). **Open to any user.** **Advancing no longer requires teams to be ready** — it always proceeds after a confirmation step, forcing the advance through so anyone can advance at any time. Automatically calculates the new week's deadline (48h for game weeks, 24h otherwise); pass `deadline_hours` to override it. On confirmation it posts a **public announcement that mass-tags the whole league** (the configured [league role](#configuration), or `@everyone`) in the [announce channel](#configuration) with the new week, its deadline, and when the next advance will happen (e.g. "advance again in ~48 hours"), and refreshes the [persistent status dashboard](#recurring-reminders--persistent-status-dashboard). When **every** team was already marked ready, it also sends a separate heads-up to the commissioners (via `DISCORD_COMMISSIONER_ROLE_ID`) so they know they can safely force the advance in-game. The Weekly Newspaper is **not** generated automatically — run `/newspaper` for that.
   - `/set-week <week> [deadline_hours]` – jump the dynasty to any week in the schedule (e.g. skip ahead to `Bowl Week 1` or reset to `Preseason`). Restricted to commissioners. The `week` option has autocomplete over the full schedule; the deadline is recalculated from the target week's default duration unless `deadline_hours` overrides it.
   - `/newspaper [week]` – manually (re)generate and post the Weekly Newspaper. Restricted to commissioners. Defaults to the most recently completed week; pass `week` to target the current or any specific week.
-  - `/register <user> <team>` – link a Discord user to a team, creating the team if it doesn't exist yet. Restricted to commissioners (same permission rule as `/advance`). The `team` option has autocomplete that searches existing teams by name or abbreviation.
-  - `/set-ready <user> <ready>` – set another user's team ready status for the current week, even if they never marked ready themselves. Restricted to commissioners (same permission rule as `/advance`). Returns a clear error if the target user isn't linked to a team, and shows an updated ready summary.
+  - `/register <user> <team>` – link a Discord user to a team, creating the team if it doesn't exist yet. Restricted to commissioners (configured role or Manage Server permission). The `team` option has autocomplete that searches existing teams by name or abbreviation.
+  - `/set-ready <user> <ready>` – set another user's team ready status for the current week, even if they never marked ready themselves. Restricted to commissioners (configured role or Manage Server permission). Returns a clear error if the target user isn't linked to a team, and shows an updated ready summary.
   - `/set-emoji <team> [emoji]` – set (or clear) the emoji shown next to a team's name in `/status` and other messages. Restricted to commissioners. The `team` option has autocomplete; leave `emoji` empty to remove a team's emoji.
   - `/edit-team <team> [name] [abbreviation]` – rename a team and/or change its abbreviation. Restricted to commissioners. The `team` option has autocomplete; provide at least one of `name`/`abbreviation`.
   - `/unlink <user>` – remove a user's link to their current team (without deleting the team). Restricted to commissioners.
@@ -114,7 +114,7 @@ The core weekly coordination flow lives in `bot/`:
 | `LEAGUE_START_WEEK` | Schedule index a fresh dynasty starts on (0 = Preseason) | `0` |
 | `LEAGUE_ADVANCE_THRESHOLD` | Ready teams required to advance, or `ALL` | `ALL` |
 | `LEAGUE_DYNASTY_ID` | Dynasty id the bot coordinates | `default` |
-| `DISCORD_COMMISSIONER_ROLE_ID` | Role allowed to run `/advance`; also pinged after an advance when everyone was ready, and as soon as every team is marked ready | Manage Server permission |
+| `DISCORD_COMMISSIONER_ROLE_ID` | Role pinged after an advance when everyone was ready, and as soon as every team is marked ready (`/advance` is open to any user) | Manage Server permission |
 | `DISCORD_LEAGUE_ROLE_ID` | Role mass-tagged in the public advance announcement | `@everyone` |
 | `DISCORD_TEAM_LINKS` | JSON linking Discord users to seeded teams (**in-memory fallback only**) | none |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (web app) | none |
@@ -234,7 +234,7 @@ gateway connection is ready):
 - A separate green **Advance Week** button gives everyone a one-click way
   to advance without typing `/advance`:
   - It is **open to everyone** — any member can click it to advance the week.
-    (The `/advance` slash command remains commissioner-only.)
+    (The `/advance` slash command is also open to any user.)
   - Clicking it opens an **ephemeral confirmation** with **Confirm Advance /
     Cancel** buttons, so an accidental click can't roll the week forward.
   - On **Confirm**, it runs the exact same logic as `/advance` (roll to the next
@@ -328,7 +328,7 @@ The seed provides four demo teams: `team-thunder`, `team-reign`, `team-blitz`, `
 5. In your server, try the flow:
    - `/status` – see the current week (Preseason on a fresh dynasty) with all teams NOT ready.
    - `/ready` – mark your team ready; the status message updates. Or click the **Mark Ready** button.
-   - `/advance` – as a commissioner, confirm the prompt to advance the week at any time (readiness is not required). Ready statuses reset for the new week, its deadline is announced with a league-wide tag, and — if everyone was ready — the commissioners get a heads-up.
+   - `/advance` – confirm the prompt to advance the week at any time (readiness is not required; anyone can force it through). Ready statuses reset for the new week, its deadline is announced with a league-wide tag, and — if everyone was ready — the commissioners get a heads-up.
 
 > With Supabase configured, state persists across restarts. Without it, the
 > in-memory fallback resets when the dev server restarts.

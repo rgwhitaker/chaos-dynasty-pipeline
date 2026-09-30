@@ -67,8 +67,8 @@ export async function buildAdvanceConfirmRow(
 
 /**
  * Handle the Advance flow shared by the persistent status dashboard and the
- * `/advance` command. The dashboard button is open to everyone; the slash
- * command stays commissioner-only and opens its own copy of the confirmation.
+ * `/advance` command. Both are open to any user; the slash command opens its
+ * own copy of the confirmation.
  *
  *  1. **Advance Week** (`advance`) — reply with an ephemeral Confirm / Cancel
  *     prompt to guard against accidental advances. The prompt is only ever seen

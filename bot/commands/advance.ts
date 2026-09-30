@@ -10,7 +10,6 @@ import type { BotCommand } from "@/bot/commands/types";
 import { fetchSendableTextChannel } from "@/bot/channels";
 import { getAnnounceChannelId, getLeagueConfig } from "@/bot/config";
 import { logError } from "@/bot/logger";
-import { isCommissioner } from "@/bot/permissions";
 import { updateStatusDashboard } from "@/bot/statusDashboard";
 import { getBotStateStore } from "@/bot/store/botStateStore";
 import { getReadyStore } from "@/bot/store/readyStore";
@@ -200,9 +199,9 @@ export async function postAdvanceAnnouncements(
 }
 
 /**
- * `/advance` — advance the league to the next week. Restricted to commissioners
- * (configured role or Manage Server permission). Advancing no longer requires
- * teams to be ready: it always proceeds after a confirmation step.
+ * `/advance` — advance the league to the next week. Open to any user; advancing
+ * always forces through regardless of who is marked ready, after a confirmation
+ * step.
  *
  * An optional `deadline_hours` overrides the automatically-calculated deadline
  * window for the new week (e.g. force 24h even on a 48h game week).
@@ -213,7 +212,7 @@ export async function postAdvanceAnnouncements(
 export const advanceCommand: BotCommand = {
   data: new SlashCommandBuilder()
     .setName("advance")
-    .setDescription("Advance the league to the next week (commissioners only).")
+    .setDescription("Advance the league to the next week, forcing it through if needed.")
     .addIntegerOption((option) =>
       option
         .setName("deadline_hours")
@@ -225,17 +224,6 @@ export const advanceCommand: BotCommand = {
     ),
 
   async execute(interaction: ChatInputCommandInteraction) {
-    const config = getLeagueConfig();
-
-    // Permission check: commissioners only.
-    if (!isCommissioner(interaction, config)) {
-      await interaction.reply({
-        content: "Only commissioners can advance the week.",
-        ephemeral: true,
-      });
-      return;
-    }
-
     const deadlineOverrideHours =
       interaction.options.getInteger("deadline_hours") ?? undefined;
 
