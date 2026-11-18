@@ -23,7 +23,7 @@ export function visionModel(): string {
   return process.env.XAI_MODEL_VISION ?? "grok-2-vision-latest";
 }
 
-async function requestGrok(model: string, messages: GrokMessage[]) {
+async function requestGrok(model: string, messages: GrokMessage[], signal?: AbortSignal) {
   const apiKey = process.env.XAI_API_KEY;
 
   if (!apiKey) {
@@ -37,6 +37,7 @@ async function requestGrok(model: string, messages: GrokMessage[]) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ model, messages }),
+    signal,
   });
 
   if (!response.ok) {
@@ -56,7 +57,7 @@ async function requestGrok(model: string, messages: GrokMessage[]) {
   return content;
 }
 
-export async function generateNarrative(prompt: string, systemPrompt?: string) {
+export async function generateNarrative(prompt: string, systemPrompt?: string, signal?: AbortSignal) {
   const messages: GrokMessage[] = [];
 
   if (systemPrompt) {
@@ -66,7 +67,7 @@ export async function generateNarrative(prompt: string, systemPrompt?: string) {
   messages.push({ role: "user", content: prompt });
 
   const textModel = process.env.XAI_MODEL_TEXT ?? "grok-3-latest";
-  return requestGrok(textModel, messages);
+  return requestGrok(textModel, messages, signal);
 }
 
 export async function analyzeScreenshot(imageUrl: string, prompt: string) {

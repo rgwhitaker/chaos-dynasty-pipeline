@@ -18,6 +18,7 @@ export const SCHEDULER_TICK_MS = 30 * MS_PER_MINUTE; // 30 minutes
 const globalForScheduler = globalThis as typeof globalThis & {
   reminderSchedulerStarted?: boolean;
   reminderSchedulerTimer?: ReturnType<typeof setInterval>;
+  reminderTickRunning?: boolean;
 };
 
 /**
@@ -35,6 +36,18 @@ const globalForScheduler = globalThis as typeof globalThis & {
  * deploy doesn't immediately ping everyone).
  */
 async function runReminderTick(client: Client): Promise<void> {
+  if (globalForScheduler.reminderTickRunning) {
+    return;
+  }
+  globalForScheduler.reminderTickRunning = true;
+  try {
+    await runReminderTickOnce(client);
+  } finally {
+    globalForScheduler.reminderTickRunning = false;
+  }
+}
+
+async function runReminderTickOnce(client: Client): Promise<void> {
   const stateStore = getBotStateStore();
   const [lastAdvanceAt, lastReminderAt] = await Promise.all([
     stateStore.getLastAdvanceAt(),
@@ -59,7 +72,10 @@ async function runReminderTick(client: Client): Promise<void> {
     return;
   }
 
-  await sendNotReadyReminder(client);
+  const reminded = await sendNotReadyReminder(client);
+  if (reminded < 0) {
+    return;
+  }
   // Record the send time even if there was nothing to remind, so the cadence
   // stays on a clean 12h schedule instead of retrying every tick.
   await stateStore.setLastReminderAt(new Date(now).toISOString());
