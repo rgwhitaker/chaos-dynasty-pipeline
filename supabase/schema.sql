@@ -87,6 +87,19 @@ create table if not exists public.newspapers (
 create index if not exists newspapers_dynasty_week_idx
   on public.newspapers (dynasty_id, week, generated_at desc);
 
+-- Sent reminders and their recipients provide context for future roasts.
+create table if not exists public.reminder_history (
+  id         bigint generated always as identity primary key,
+  dynasty_id text not null default 'default',
+  week       integer not null,
+  members    jsonb not null,
+  roast      text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists reminder_history_dynasty_created_idx
+  on public.reminder_history (dynasty_id, created_at desc);
+
 -- Box scores (from videos) --------------------------------------------------
 -- One row per Box Score extracted from an uploaded game video by
 -- `/process-video`. The full structured result (team names, scores, quarter
@@ -182,6 +195,7 @@ alter table public.week_states enable row level security;
 alter table public.dynasty_state enable row level security;
 alter table public.team_ready_states enable row level security;
 alter table public.newspapers enable row level security;
+alter table public.reminder_history enable row level security;
 alter table public.box_scores enable row level security;
 alter table public.extracted_data enable row level security;
 alter table public.bot_state enable row level security;

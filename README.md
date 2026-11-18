@@ -118,11 +118,12 @@ The core weekly coordination flow lives in `bot/`:
 | `DISCORD_LEAGUE_ROLE_ID` | Role mass-tagged in the public advance announcement | `@everyone` |
 | `DISCORD_TEAM_LINKS` | JSON linking Discord users to seeded teams (**in-memory fallback only**) | none |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (web app) | none |
-| `XAI_API_KEY` | xAI Grok API key (required to generate newspapers) | none |
+| `XAI_API_KEY` | xAI Grok API key (required to generate newspapers and reminder roasts) | none |
 | `NEWSPAPER_CHANNEL_ID` | Discord channel id the Weekly Newspaper is posted to | none |
 | `NEWSPAPER_IMAGE_URL` | Optional image shown as the newspaper embed thumbnail | none |
 | `STATUS_CHANNEL_ID` | Channel for the persistent status dashboard | none |
 | `REMINDER_CHANNEL_ID` | Channel for the recurring "not ready" reminders (falls back to `ANNOUNCE_CHANNEL_ID`, then `STATUS_CHANNEL_ID`) | none |
+| `REMINDER_MEMBER_NAMES` | JSON object mapping Discord user IDs or usernames to names for reminder roasts | none |
 | `ANNOUNCE_CHANNEL_ID` | Channel the public "week advanced" announcement (mass-tag) is posted to; also where commissioners are pinged when every team is ready (falls back to `STATUS_CHANNEL_ID` for that ping) | channel the advance was triggered from |
 
 When `NEXT_PUBLIC_SUPABASE_URL` **and** `SUPABASE_SERVICE_ROLE_KEY` are set,
@@ -206,6 +207,18 @@ gateway connection is ready):
   clock. After that, reminders **recur every 12 hours** until the next advance.
 - It never spams: if every linked team is already ready, the reminder is skipped
   entirely, and only not-ready owners are pinged (via scoped `allowedMentions`).
+- For each reminder, Grok generates a fresh roast of the linked owners still
+  waiting. Set `REMINDER_MEMBER_NAMES` to a JSON object mapping their Discord
+  IDs (preferred, since usernames can change) or usernames to their names.
+  Supply the actual mappings for Rob, Derek, Al, Jpatt, Kevin, Grice and Tony;
+  the repository does not contain those Discord identities. Unmapped users fall
+  back to their Discord username or team name. If Grok is unavailable, the
+  standard reminder is still sent.
+- Sent reminders, recipient IDs, usernames, names, teams, and roasts are logged
+  in `reminder_history` for future prompts. Run `supabase/schema.sql` to add
+  the table to an existing database; without Supabase, history is held only in
+  memory and lost on restart. A failed history read or write is logged and does
+  not prevent the reminder from being sent.
 - The cadence is **resilient across restarts**. Both the last advance time and
   the last reminder time are persisted in the `bot_state` table
   (`last_advance_at` / `last_reminder_at`), and a lightweight scheduler tick
