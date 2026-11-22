@@ -1,4 +1,4 @@
-import { getApplicationId, getGuildId } from "@/bot/config";
+import { getApplicationId, getGuildId, isMessageLoggingEnabled } from "@/bot/config";
 import { logBot, logError, logWarn } from "@/bot/logger";
 
 type DiscordClient = import("discord.js").Client;
@@ -162,12 +162,28 @@ function attachLifecycleListeners(
 async function createDiscordClient(): Promise<DiscordClient> {
   const { Client, Events, GatewayIntentBits } = await getDiscordRuntime();
   const { commandMap, handleAdvanceButton, handleReadyButton } = await import("@/bot/commands");
+  const messageLogging = isMessageLoggingEnabled();
 
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds],
+    intents: messageLogging
+      ? [
+          GatewayIntentBits.Guilds,
+          GatewayIntentBits.GuildMessages,
+          // Privileged: must be enabled in the Discord Developer Portal.
+          GatewayIntentBits.MessageContent,
+        ]
+      : [GatewayIntentBits.Guilds],
   });
 
   attachLifecycleListeners(client, Events);
+
+  if (messageLogging) {
+    const { logDiscordMessage } = await import("@/bot/messageLog");
+    client.on(Events.MessageCreate, (message) => {
+      void logDiscordMessage(message);
+    });
+    logBot("Discord message logging enabled (roast material for reminders).");
+  }
 
   client.on(Events.InteractionCreate, async (interaction) => {
     try {

@@ -123,6 +123,7 @@ The core weekly coordination flow lives in `bot/`:
 | `NEWSPAPER_IMAGE_URL` | Optional image shown as the newspaper embed thumbnail | none |
 | `STATUS_CHANNEL_ID` | Channel for the persistent status dashboard | none |
 | `REMINDER_CHANNEL_ID` | Channel for the recurring "not ready" reminders (falls back to `ANNOUNCE_CHANNEL_ID`, then `STATUS_CHANNEL_ID`) | none |
+| `DISCORD_MESSAGE_LOGGING_ENABLED` | Set `true` to log recent guild chat to `discord_messages` as roast material (requires the privileged **Message Content** intent enabled in the Developer Portal) | `false` |
 | `ANNOUNCE_CHANNEL_ID` | Channel the public "week advanced" announcement (mass-tag) is posted to; also where commissioners are pinged when every team is ready (falls back to `STATUS_CHANNEL_ID` for that ping) | channel the advance was triggered from |
 
 When `NEXT_PUBLIC_SUPABASE_URL` **and** `SUPABASE_SERVICE_ROLE_KEY` are set,
@@ -268,6 +269,20 @@ When `STATUS_CHANNEL_ID` is **unset**, the dashboard is not maintained. Reminder
 post to `REMINDER_CHANNEL_ID` if it is set; when both are unset, the recurring
 reminders are skipped (a warning is logged) — everything else works as before.
 
+**NSFW reminder roasts**
+
+When `XAI_API_KEY` is set, each recurring reminder appends a "Roast corner" with a
+unique, vulgar Grok-written roast per not-ready owner (`lib/grok/roasts.ts`). Each
+reminder increments that team's count in `reminder_stats`, and the prompt includes
+how often they've been reminded relative to the rest of the league. If Grok fails,
+times out, or returns nothing usable, the plain reminder is posted unchanged.
+
+With `DISCORD_MESSAGE_LOGGING_ENABLED=true`, the bot also stores live non-bot guild
+messages in `discord_messages` (30-day rolling window, auto-pruned) and feeds recent
+chat involving the targets into the prompt. There is **no historical backfill** —
+Discord rate limits and permissions make a bulk scrape impractical, so only messages
+sent while the bot is online are captured.
+
 ### Supabase setup
 
 1. Create a Supabase project and copy its URL, anon key, and **service role**
@@ -285,7 +300,8 @@ reminders are skipped (a warning is logged) — everything else works as before.
 2. Create the tables. In the Supabase dashboard open **SQL Editor**, paste the
    contents of [`supabase/schema.sql`](supabase/schema.sql), and run it. This
    creates `teams`, `dynasty_state`, `week_states`, `team_ready_states`,
-   `newspapers`, `box_scores`, and `bot_state` (with RLS enabled).
+   `newspapers`, `box_scores`, `bot_state`, `reminder_stats`, and
+   `discord_messages` (with RLS enabled).
 
 3. Seed initial teams by running [`supabase/seed.sql`](supabase/seed.sql) the
    same way. It inserts starter teams and opens the dynasty on Preseason. To link
