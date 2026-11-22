@@ -112,6 +112,16 @@ export function isBotEnabled(): boolean {
 }
 
 /**
+ * Whether the bot should log recent guild chat to `discord_messages` (roast
+ * material for the not-ready reminders). Opt-in because it requests the
+ * privileged Message Content intent, which must first be enabled in the Discord
+ * Developer Portal — requesting it otherwise makes login fail.
+ */
+export function isMessageLoggingEnabled(): boolean {
+  return process.env.DISCORD_MESSAGE_LOGGING_ENABLED?.trim().toLowerCase() === "true";
+}
+
+/**
  * Resolved OneDrive / Microsoft Graph configuration for the background
  * screenshot monitor. All fields are optional so the bot runs fine without
  * OneDrive configured; {@link isOnedriveConfigured} reports whether the minimum

@@ -173,6 +173,42 @@ alter table public.bot_state
 alter table public.bot_state
   add column if not exists onedrive_delta_link text;
 
+-- Reminder stats --------------------------------------------------------------
+-- One row per team counting how many recurring "not ready" reminders it has
+-- been pinged in. Incremented each time `sendNotReadyReminder` posts, and used
+-- to rank teams against the rest of the league for the AI roasts.
+create table if not exists public.reminder_stats (
+  team_id          text primary key references public.teams (id) on delete cascade,
+  reminder_count   integer not null default 0,
+  last_reminded_at timestamptz,
+  updated_at       timestamptz not null default now()
+);
+
+-- Discord message log ---------------------------------------------------------
+-- Rolling window of recent (non-bot) guild messages captured live by the bot's
+-- `messageCreate` listener, used as extra roast material. Only populated when
+-- `DISCORD_MESSAGE_LOGGING_ENABLED=true` (requires the privileged Message
+-- Content intent). There is NO historical backfill: Discord API rate limits and
+-- permissions make a bulk scrape impractical, so only messages sent while the
+-- bot is online are captured. Rows older than the retention window are pruned
+-- by the bot automatically.
+create table if not exists public.discord_messages (
+  id                 text primary key,
+  guild_id           text,
+  channel_id         text not null,
+  author_id          text not null,
+  author_name        text,
+  content            text not null,
+  mentioned_user_ids text[] not null default '{}',
+  created_at         timestamptz not null default now()
+);
+
+create index if not exists discord_messages_created_at_idx
+  on public.discord_messages (created_at desc);
+
+create index if not exists discord_messages_author_id_idx
+  on public.discord_messages (author_id, created_at desc);
+
 -- Row level security ----------------------------------------------------------
 -- The Discord bot talks to Supabase with the service role key, which bypasses
 -- RLS. Enabling RLS with no public policies keeps these tables private from the
@@ -185,3 +221,5 @@ alter table public.newspapers enable row level security;
 alter table public.box_scores enable row level security;
 alter table public.extracted_data enable row level security;
 alter table public.bot_state enable row level security;
+alter table public.reminder_stats enable row level security;
+alter table public.discord_messages enable row level security;
